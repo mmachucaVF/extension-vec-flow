@@ -474,7 +474,7 @@
     const flows = [], seen = new Set();
     for (let page = 1; page <= 50; page++) {
       try {
-        const r = await fetch(`/dashboard?search=&environment_id=&status=active&sort_by=last_run&sort_dir=desc&per_page=50&page=${page}`, {credentials:'include'});
+        const r = await fetch(`/dashboard?search=&environment_id=&status=active&sort_by=id&sort_dir=asc&per_page=50&page=${page}`, {credentials:'include'});
         const html = await r.text();
         const m = html.match(/Mostrando\s+(\d+)\s*-\s*(\d+)\s+de\s+(\d+)/);
         const to    = m ? parseInt(m[2]) : 0;
