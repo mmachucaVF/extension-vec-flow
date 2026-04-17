@@ -19,7 +19,7 @@
       #fm-toggle-btn{position:fixed;right:0;top:50%;transform:translateY(-50%);z-index:1000000;background:#6c63ff;border:none;border-radius:10px 0 0 10px;width:26px;height:64px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s;box-shadow:-3px 0 16px rgba(108,99,255,.35);padding:0;pointer-events:all}
       #fm-toggle-btn:hover{width:30px;background:#8078ff}
       #fm-toggle-btn svg{width:14px;height:14px;fill:white;transition:transform .25s}
-      #fm-panel{position:fixed;top:0;right:0;width:760px;height:100vh;z-index:999999;display:flex;flex-direction:column;background:#0a0c10;border-left:1px solid rgba(255,255,255,.06);font-family:system-ui,sans-serif;font-size:13px;color:#eceef2;transform:translateX(100%);transition:transform .28s cubic-bezier(.4,0,.2,1);box-shadow:-12px 0 48px rgba(0,0,0,.6);pointer-events:none}
+      #fm-panel{position:fixed;top:0;right:0;width:760px;height:100vh;z-index:999999;display:flex;flex-direction:column;background:#0a0c10;border-left:1px solid rgba(255,255,255,.06);font-family:system-ui,sans-serif;font-size:13px;color:#eceef2;transform:translateX(100%);transition:transform .28s cubic-bezier(.4,0,.2,1);box-shadow:-12px 0 48px rgba(0,0,0,.6);pointer-events:none;overflow-x:hidden}
       #fm-panel.fm-open{transform:translateX(0);pointer-events:all}
       #fm-header{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-bottom:1px solid rgba(255,255,255,.06);background:#111318;flex-shrink:0;gap:10px}
       #fm-header-left{display:flex;align-items:center;gap:10px}
@@ -41,7 +41,7 @@
       .fm-btn.fm-primary{background:#6c63ff;border-color:#6c63ff;color:#fff}
       .fm-btn.fm-primary:hover:not(:disabled){background:#8078ff}
       .fm-btn.fm-danger{background:rgba(240,80,80,.1);border-color:rgba(240,80,80,.22);color:#f05050}
-      #fm-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:rgba(255,255,255,.06);border-bottom:1px solid rgba(255,255,255,.06);flex-shrink:0}
+      #fm-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:rgba(255,255,255,.06);border-bottom:1px solid rgba(255,255,255,.06);flex-shrink:0;min-width:0}
       .fm-stat{background:#111318;padding:9px 12px;display:flex;flex-direction:column;gap:2px;cursor:pointer;transition:background .15s;position:relative}
       .fm-stat:hover{background:#181b22}
       .fm-stat.fm-active::after{content:'';position:absolute;bottom:0;left:0;right:0;height:2px}
@@ -53,8 +53,8 @@
       .fm-stat-value{font-size:20px;font-weight:500;line-height:1.1}
       .fm-stat-meta{font-size:9px;color:#434a57}
       .fm-c-all{color:#eceef2}.fm-c-error{color:#f05050}.fm-c-timeout{color:#f5923e}.fm-c-ok{color:#3ecf82}
-      #fm-main{display:grid;grid-template-columns:1fr 1fr;flex:1;overflow:hidden;min-height:0}
-      #fm-list-panel{display:flex;flex-direction:column;border-right:1px solid rgba(255,255,255,.06);overflow:hidden;min-height:0}
+      #fm-main{display:grid;grid-template-columns:1fr 1fr;flex:1;overflow:hidden;min-height:0;min-width:0}
+      #fm-list-panel{display:flex;flex-direction:column;border-right:1px solid rgba(255,255,255,.06);overflow:hidden;min-height:0;min-width:0}
       #fm-toolbar{padding:7px 10px;border-bottom:1px solid rgba(255,255,255,.06);background:#111318;display:flex;align-items:center;gap:6px;flex-shrink:0;position:sticky;top:0;z-index:5}
       .fm-search{flex:1;background:#181b22;border:1px solid rgba(255,255,255,.06);color:#eceef2;font-size:11px;padding:5px 9px;border-radius:7px;outline:none}
       .fm-search:focus{border-color:#6c63ff}
@@ -62,7 +62,7 @@
       .fm-chip:hover{color:#eceef2;border-color:rgba(255,255,255,.18)}
       .fm-chip.fm-active{background:rgba(108,99,255,.12);border-color:rgba(108,99,255,.3);color:#6c63ff}
       #fm-list-content{flex:1;overflow-y:auto}
-      .fm-row{padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.06);display:flex;align-items:flex-start;gap:8px;cursor:pointer;transition:background .1s}
+      .fm-row{padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.06);display:flex;align-items:flex-start;gap:8px;cursor:pointer;transition:background .1s;min-width:0}
       .fm-row:hover{background:#111318}
       .fm-row.fm-state-error{border-left:2px solid #f05050}
       .fm-row.fm-state-timeout{border-left:2px solid #f5923e}
@@ -72,8 +72,8 @@
       .fm-row.fm-selected .fm-check{background:#6c63ff;border-color:#6c63ff}
       .fm-check-mark{display:none;color:#fff;font-size:9px}
       .fm-row.fm-selected .fm-check-mark{display:block}
-      .fm-info{flex:1;min-width:0}
-      .fm-name{font-size:11px;font-weight:500;color:#e2e8f0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:2px}
+      .fm-info{flex:1;min-width:0;overflow:hidden}
+      .fm-name{font-size:11px;font-weight:500;color:#e2e8f0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:2px;max-width:100%}
       .fm-desc{font-size:10px;color:#6b7280;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:3px}
       .fm-meta{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
       .fm-id,.fm-time{font-size:9px;color:#4b5563}
@@ -112,7 +112,7 @@
       #fm-sel-bar.fm-visible{transform:translateY(0)}
       .fm-sel-info{flex:1;font-size:11px;color:#7c8494}
       .fm-sel-count{color:#6c63ff;font-weight:500}
-      #fm-detail{overflow-y:auto;background:#111318;display:flex;flex-direction:column}
+      #fm-detail{overflow-y:auto;overflow-x:hidden;background:#111318;display:flex;flex-direction:column;min-width:0}
       .fm-detail-hdr{padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.06);position:sticky;top:0;background:#111318;z-index:5;flex-shrink:0}
       .fm-detail-hdr.fm-hdr-error{border-top:3px solid #f05050}
       .fm-detail-hdr.fm-hdr-timeout{border-top:3px solid #f5923e}
@@ -329,9 +329,9 @@
     const panel = document.getElementById('fm-panel');
     const btn   = document.getElementById('fm-toggle-btn');
     panel.classList.toggle('fm-open', panelOpen);
-    document.body.style.marginRight  = panelOpen ? '760px' : '0px';
-    document.body.style.transition   = 'margin-right 0.28s cubic-bezier(0.4,0,0.2,1)';
-    if (btn) btn.style.right = panelOpen ? '760px' : '0px';
+    
+    
+    if (btn) btn.style.right = panelOpen ? '760px' : '0';
     if (panelOpen && allFlows.length === 0) loadFlows();
   }
 
