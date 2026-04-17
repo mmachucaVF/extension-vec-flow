@@ -407,7 +407,10 @@
     async function loadAllFlows() {
     const flows = [], seen = new Set();
     for (let page = 1; page <= 50; page++) {
-      const { flows: pf, to, total } = await fetchFlowsFromPage(null, page);
+      const result = await fetchFlowsFromPage(null, page);
+      const pf = result.flows || [];
+      const to = result.to || 0;
+      const total = result.total || 0;
       for (const f of pf) {
         if (!seen.has(f.id)) { seen.add(f.id); flows.push(f); }
       }
