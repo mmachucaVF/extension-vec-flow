@@ -699,7 +699,21 @@
   }
 
   function toggleGroup() { groupMode=!groupMode; groupByError=false; document.getElementById('fm-group-btn').classList.toggle('fm-active',groupMode); document.getElementById('fm-group-err-btn').classList.remove('fm-active'); currentPage=1; renderList(); }
-  function toggleGroupByError() { groupByError=!groupByError; groupMode=false; document.getElementById('fm-group-err-btn').classList.toggle('fm-active',groupByError); document.getElementById('fm-group-btn').classList.remove('fm-active'); currentPage=1; renderList(); }
+  function toggleGroupByError() {
+    groupByError = !groupByError;
+    groupMode = false;
+    document.getElementById('fm-group-err-btn').classList.toggle('fm-active', groupByError);
+    document.getElementById('fm-group-btn').classList.remove('fm-active');
+    currentPage = 1;
+    if (groupByError) {
+      // Cargar detalles primero — loadErrorDetailsInBackground muestra loading
+      // bloqueante y llama renderList() cuando termina
+      const errFlows = allFlows.filter(f => f.state === 'error' || f.state === 'timeout');
+      loadErrorDetailsInBackground(errFlows);
+    } else {
+      renderList();
+    }
+  }
 
   function getFiltered() {
     const q=document.getElementById('fm-search')?.value.toLowerCase()||'';
