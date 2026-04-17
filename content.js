@@ -359,10 +359,10 @@
       }
       setMsg('◎', `Stats: ${errors} errores · ${timeouts} timeouts · ${ok} OK · ${running} running`);
       await sleep(300);
-      const errorFlows   = await loadStateFromDOM('error',   errors,  Math.ceil(errors/50));
-      const timeoutFlows = await loadStateFromDOM('timeout', timeouts, Math.ceil(timeouts/50));
-      const okFlows      = await loadStateFromDOM('ok',      ok,       Math.ceil(ok/50));
-      const runningFlows = await loadStateFromDOM('running', running,  Math.ceil(Math.max(running,1)/50));
+      const errorFlows   = await loadStateFromDOM('error');
+      const timeoutFlows = await loadStateFromDOM('timeout');
+      const okFlows      = await loadStateFromDOM('ok');
+      const runningFlows = await loadStateFromDOM('running');
       allFlows = [...errorFlows, ...timeoutFlows, ...okFlows, ...runningFlows];
       const globalSeen = new Set();
       allFlows = allFlows.filter(f => { if (globalSeen.has(f.id)) return false; globalSeen.add(f.id); return true; });
@@ -399,17 +399,15 @@
     return { errors, timeouts, ok, running };
   }
 
-    async function loadStateFromDOM(state, total, totalPages) {
-    if (total === 0) return [];
-    const flows = [], seen = new Set(), label = state==='error'?'errores':state==='timeout'?'timeouts':'OK';
-    for (let page = 1; page <= totalPages; page++) {
-      setMsg('◎', `Cargando ${label}... p.${page}/${totalPages}`);
+    async function loadStateFromDOM(state) {
+    const flows = [], seen = new Set(), label = state==='error'?'errores':state==='timeout'?'timeouts':state==='running'?'running':'OK';
+    for (let page = 1; page <= 50; page++) {
+      setMsg('◎', `Cargando ${label}... p.${page}`);
       const pf = await fetchFlowsFromPage(state, page);
-      let added = 0;
       for (const f of pf) {
-        if (!seen.has(f.id)) { seen.add(f.id); flows.push(f); added++; }
+        if (!seen.has(f.id)) { seen.add(f.id); flows.push(f); }
       }
-      if (pf.length === 0) break; // parar solo si el servidor devolvió 0 flows
+      if (pf.length === 0) break;
     }
     return flows;
   }
