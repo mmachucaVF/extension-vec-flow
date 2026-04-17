@@ -1,24 +1,32 @@
 {
   "manifest_version": 3,
-  "name": "Flow Monitor",
-  "version": "1.0",
-  "description": "Monitor VecFleet flows from the dashboard",
-  "permissions": ["storage", "activeTab"],
-  "host_permissions": ["https://flow.vecfleet.io/*"],
-  "content_scripts": [{
-    "matches": ["https://flow.vecfleet.io/*"],
-    "js": ["content.js"],
-    "run_at": "document_idle"
-  }],
-  "background": {
-    "service_worker": "background.js"
-  },
+  "name": "Flow Monitor \u2014 VecFleet",
+  "version": "2.1",
+  "description": "Monitor de flows: errores, timeouts, diagn\u00f3stico IA y tickets Jira",
+  "permissions": [
+    "clipboardWrite",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://flow.vecfleet.io/*",
+    "https://api.anthropic.com/*",
+    "https://*.atlassian.net/*"
+  ],
   "action": {
     "default_title": "Flow Monitor"
   },
-  "icons": {
-    "16": "icon16.png",
-    "48": "icon48.png",
-    "128": "icon128.png"
+  "content_scripts": [
+    {
+      "matches": [
+        "https://flow.vecfleet.io/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_end"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
   }
 }
