@@ -403,11 +403,11 @@
     const flows = [], seen = new Set(), label = state==='error'?'errores':state==='timeout'?'timeouts':state==='running'?'running':'OK';
     for (let page = 1; page <= 50; page++) {
       setMsg('◎', `Cargando ${label}... p.${page}`);
-      const pf = await fetchFlowsFromPage(state, page);
+      const { flows: pf, to, total } = await fetchFlowsFromPage(state, page);
       for (const f of pf) {
         if (!seen.has(f.id)) { seen.add(f.id); flows.push(f); }
       }
-      if (pf.length === 0) break;
+      if (pf.length === 0 || total === 0 || to >= total) break;
     }
     return flows;
   }
@@ -421,8 +421,13 @@
     try {
       const r = await fetch(`/dashboard?${p.toString()}`, { credentials:'include' });
       const html = await r.text();
-      return parseFlowsFromHTML(html, state);
-    } catch(e) { return []; }
+      const flows = parseFlowsFromHTML(html, state);
+      // Leer el "Mostrando X - Y de TOTAL" para saber si hay más páginas
+      const m = html.match(/Mostrando\s+(\d+)\s*-\s*(\d+)\s+de\s+(\d+)/);
+      const to    = m ? parseInt(m[2]) : 0;
+      const total = m ? parseInt(m[3]) : 0;
+      return { flows, to, total };
+    } catch(e) { return { flows:[], to:0, total:0 }; }
   }
 
   function parseFlowsFromHTML(html, state) {
