@@ -74,7 +74,7 @@
       .fm-row.fm-selected .fm-check-mark{display:block}
       .fm-info{flex:1;min-width:0}
       .fm-name{font-size:11px;font-weight:500;color:#e2e8f0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:2px}
-      .fm-desc{font-size:10px;color:#6b7280;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:3px}
+      .fm-desc{font-size:10px;color:#6b7280;white-space:nowraw;overflow:hidden;text-overflow:ellipsis;margin-bottom:3px}
       .fm-meta{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
       .fm-id,.fm-time{font-size:9px;color:#4b5563}
       .fm-pill{font-size:8px;font-weight:500;padding:1px 6px;border-radius:20px;display:inline-flex;align-items:center;gap:3px}
@@ -351,26 +351,45 @@
       const timeoutFlows = await loadStateFromDOM('timeout', timeouts, Math.ceil(timeouts/50));
       const okFlows      = await loadStateFromDOM('ok',      ok,       Math.ceil(ok/50));
       allFlows = [...errorFlows, ...timeoutFlows, ...okFlows];
+      // Deduplicación final por seguridad
+      const globalSeen = new Set();
+      allFlows = allFlows.filter(f => { if (globalSeen.has(f.id)) return false; globalSeen.add(f.id); return true; });
       document.getElementById('fm-date').textContent = new Date().toLocaleDateString('es-AR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
       navigateDashboard({ state: null, page: 1 });
       await waitForFlows(3000);
       renderList();
       setMsg('✓', `Listo: ${allFlows.length} flows cargados`);
+      // Cargar detalles de flows con error/timeout en background
+      loadErrorDetailsInBackground([...errorFlows, ...timeoutFlows]);
     } catch(e) { console.error('[FlowMonitor]', e); showError(e.message); }
     btn.textContent = '🔄 Actualizar'; btn.disabled = false;
   }
 
+  async function loadErrorDetailsInBackground(flows) {
+    const BATCH = 5;
+    for (let i = 0; i < flows.length; i += BATCH) {
+      const batch = flows.slice(i, i + BATCH);
+      await Promise.all(batch.map(f => loadFlowDetail(f)));
+      if (groupByError) renderList();
+    }
+    if (groupByError) renderList();
+  }
+
   async function loadStateFromDOM(state, total, totalPages) {
     if (total === 0) return [];
-    const flows = [], label = state==='error'?'errores':state==='timeout'?'timeouts':'OK';
+    const flows = [], seen = new Set(), label = state==='error'?'errores':state==='timeout'?'timeouts':'OK';
     for (let page = 1; page <= totalPages; page++) {
       setMsg('◎', `Cargando ${label}... p.${page}/${totalPages}`);
       navigateDashboard({ state, page, perPage: 50 });
       const ok = await waitForFlows(8000);
       if (!ok) break;
       const pf = readFlowsFromDOM(state);
-      flows.push(...pf);
-      if (pf.length === 0) break;
+      // Deduplicar: solo agregar flows que no vimos antes
+      let added = 0;
+      for (const f of pf) {
+        if (!seen.has(f.id)) { seen.add(f.id); flows.push(f); added++; }
+      }
+      if (added === 0) break; // página idéntica a anterior = no hay más
     }
     return flows;
   }
@@ -403,7 +422,17 @@
 
   function readFlowsFromDOM(state) {
     const flows = [], seen = new Set();
-    for (const a of document.querySelectorAll('a[href*="/flows/"]')) {
+    // Usar selector específico: solo los links principales del card (clase text-lg)
+    // Evita duplicados por links del sidebar, botón Panel, etc.
+    const selector = 'a.text-lg[href*="/flows/"], a[href*="/flows/"][class*="text-lg"]';
+    let links = [...document.querySelectorAll(selector)];
+    // Fallback: si no encuentra con ese selector, usar el criterio anterior
+    if (links.length === 0) {
+      links = [...document.querySelectorAll('a[href*="/flows/"]')].filter(a =>
+        a.href.match(/\/flows\/\d+$/) && !a.innerText?.includes('Panel') && (a.innerText?.trim().length || 0) > 4
+      );
+    }
+    for (const a of links) {
       const m = a.href.match(/\/flows\/(\d+)$/);
       if (!m) continue;
       const id = m[1], name = a.innerText?.trim();
@@ -437,12 +466,35 @@
 
   async function loadFlowDetail(flow) {
     if (flow.detailLoaded) return;
+
+    // Para flows con error/timeout, fetchear con filtro de estado Failed
+    // para obtener la execution que realmente falló (no la más reciente que puede ser OK)
+    const FAILED_STATE = 'App%5CFlows%5CSupport%5CStates%5CExecution%5CFailed';
+    const TIMEOUT_STATE = 'App%5CFlows%5CSupport%5CStates%5CExecution%5CTimedOut';
+
     try {
-      const r = await fetch(`${BASE}/flows/${flow.id}`, {credentials:'include'});
-      const h = await r.text();
-      const m = h.match(/\/executions\/(\d+)\/details/);
-      if (m) flow.executionId = m[1];
+      // Intentar primero con filtro de estado según el tipo de fallo
+      let execId = null;
+
+      if (flow.state === 'error' || flow.state === 'timeout') {
+        const stateParam = flow.state === 'timeout' ? TIMEOUT_STATE : FAILED_STATE;
+        const r = await fetch(`${BASE}/flows/${flow.id}?state=${stateParam}`, {credentials:'include'});
+        const h = await r.text();
+        const m = h.match(/\/executions\/(\d+)\/details/);
+        if (m) execId = m[1];
+      }
+
+      // Fallback: sin filtro (para flows OK o si no encontró con filtro)
+      if (!execId) {
+        const r = await fetch(`${BASE}/flows/${flow.id}`, {credentials:'include'});
+        const h = await r.text();
+        const m = h.match(/\/executions\/(\d+)\/details/);
+        if (m) execId = m[1];
+      }
+
+      if (execId) flow.executionId = execId;
     } catch(e) {}
+
     if (flow.executionId) {
       try {
         const r = await fetch(`${BASE}/executions/${flow.executionId}/details`, {credentials:'include'});
@@ -563,12 +615,14 @@
   function esc(s){if(!s)return '';return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 
   function handleClick(id) {
-    const flow=allFlows.find(f=>f.id===id); if(!flow)return;
-    const was=selectedIds.has(id);
-    was?selectedIds.delete(id):selectedIds.add(id);
-    const row=document.querySelector(`[data-id="${id}"]`);
-    if(row)row.classList.toggle('fm-selected',selectedIds.has(id));
-    if(was)clearDetail();else showDetail(flow);
+    const flow = allFlows.find(f => f.id === id); if (!flow) return;
+    const was = selectedIds.has(id);
+    was ? selectedIds.delete(id) : selectedIds.add(id);
+    // Actualizar TODAS las filas con este id (puede haber duplicados en el DOM)
+    document.querySelectorAll(`[data-id="${id}"]`).forEach(row => {
+      row.classList.toggle('fm-selected', selectedIds.has(id));
+    });
+    if (was) clearDetail(); else showDetail(flow);
     updateSelBar();
   }
 
@@ -621,9 +675,9 @@
 
   function runDiagnosis(flowId) {
     const flow=allFlows.find(f=>f.id===flowId);if(!flow)return;
-    if(getDiagUsage()>=DAILY_LIMIT){const el=document.getElementById(`fm-diag-body-${flowId}`);if(el)el.innerHTML=`<div style="font-size:10px;color:#f5923e;padding:6px 0">⚠️ Límite diario alcanzado.</div>`;return;}
+    if(getDiagUsage()>=DAILY_LIMIT){const el=document.getElementById(`fm-diag-body-${flowId}`);if(el)el.innerHTML<`<div style="font-size:10px;color:#f5923e;padding:6px 0">⚠️ Límite diario alcanzado.</div>`;return;}
     if(typeof flow.diagnosis==='string'&&flow.diagnosis.length>0){const el=document.getElementById(`fm-diag-body-${flowId}`);if(el){el.innerHTML=`<div id="fm-diag-text-${flowId}" style="font-size:11px;color:#c8d0e0;line-height:1.7;background:rgba(108,99,255,.06);border:1px solid rgba(108,99,255,.18);border-radius:7px;padding:12px"></div>`;const t=document.getElementById(`fm-diag-text-${flowId}`);if(t)t.innerHTML=flow.diagnosis.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').trim();}return;}
-    const bodyEl=document.getElementById(`fm-diag-body-${flowId}`);if(bodyEl)bodyEl.innerHTML=`<div style="font-size:11px;color:#434a57;padding:4px 0">◌ Analizando con IA...</div>`;
+    const bodyEl=document.getElementById(`fm-diag-body-${flowId}`);if(bodyEl)bodyEl.innerHTML<`<div style="font-size:11px;color:#434a57;padding:4px 0">◌ Analizando con IA...</div>`;
     generateDiagnosis(flow).then(diag=>{
       flow.diagnosis=diag||false;if(diag)incDiagUsage();updateDiagQuota();
       const el=document.getElementById(`fm-diag-body-${flowId}`);
@@ -738,7 +792,7 @@
       const cfg=getJiraConfig(),url=`${cfg.url.replace(/\/$/,'')}/browse/${data.key}`;
       allFlows.filter(f=>selectedIds.has(f.id)).forEach(f=>{const all=JSON.parse(localStorage.getItem('fm_linked_tickets')||'{}');if(!all[f.id])all[f.id]=[];if(!all[f.id].find(t=>t.key===data.key))all[f.id].unshift({key:data.key,url,title,linkedAt:new Date().toISOString()});localStorage.setItem('fm_linked_tickets',JSON.stringify(all));});
       status.innerHTML=`✓ Ticket <a href="${url}" target="_blank" style="color:#6c63ff;font-weight:600">${data.key}</a> creado`;status.style.color='#3ecf82';btn.textContent='✓ Creado';
-      setTimeout(()=>{closeJiraModal();btn.disabled=false;btn.textContent='Crear ticket →';},3000);
+      setTimeout(()=>{closeJiraModal();btn.disabled=false;btn.textContent='Crear ticket →+;},3000);
     }catch(e){status.textContent=`✕ Error: ${e.message}`;status.style.color='#f05050';btn.disabled=false;btn.textContent='Crear ticket →';}
   }
 
@@ -768,7 +822,7 @@
 
   function showLoading(msg){document.getElementById('fm-list-content').innerHTML=`<div class="fm-loading-bar"></div><div class="fm-empty"><div class="fm-empty-icon" id="fm-loading-icon">◎</div><div class="fm-empty-text" id="fm-loading-msg">${msg||'Cargando...'}</div></div>`;document.getElementById('fm-pagination').innerHTML='';}
   function setMsg(icon,msg){const i=document.getElementById('fm-loading-icon'),m=document.getElementById('fm-loading-msg');if(i)i.textContent=icon;if(m)m.textContent=msg;}
-  function showError(msg){document.getElementById('fm-list-content').innerHTML=`<div class="fm-empty"><div class="fm-empty-icon" style="color:#ff4d4d">✕</div><div class="fm-empty-text" style="color:#ff4d4d">Error: ${esc(msg)}<br><br><span style="color:#555b66">Asegurate de estar en<br>flow.vecfleet.io y logueado</span></div></div>`;}
+  function showError(msg){document.getElementById('fm-list-content').innerHTML<`<div class="fm-empty"><div class="fm-empty-icon" style="color:#ff4d4d">✕</div><div class="fm-empty-text" style="color:#ff4d4d">Error: ${esc(msg)}<br><br><span style="color:#555b66">Asegurate de estar en<br>flow.vecfleet.io y logueado</span></div></div>`;}
 
   chrome.runtime.onMessage.addListener((msg) => { if(msg.action==='toggle')togglePanel(); });
   injectStyles();
