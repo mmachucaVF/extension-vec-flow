@@ -342,21 +342,31 @@
     btn.textContent = '↻ Cargando...'; btn.disabled = true;
     allFlows = []; currentPage = 1;
     try {
-      showLoading('Leyendo estadísticas...');
+      showLoading('Leyendo totales...');
+      const realTotals = await fetchStateTotals();
+      const { errors, timeouts, ok, running } = realTotals;
       parseStatsFromDOM();
-      const { errors, timeouts, ok } = statsData;
-      setMsg('◎', `Stats: ${errors} errores · ${timeouts} timeouts · ${ok} OK`);
+      // Actualizar stats del panel con valores reales
+      document.getElementById('fm-stat-total').textContent    = errors+timeouts+ok+running || '—';
+      document.getElementById('fm-stat-errors').textContent   = errors   || '—';
+      document.getElementById('fm-stat-timeouts').textContent = timeouts || '—';
+      document.getElementById('fm-stat-ok-val').textContent   = ok       || '—';
+      const total = errors+timeouts+ok+running;
+      if (total>0) {
+        document.getElementById('fm-stat-error-pct').textContent   = ((errors/total)*100).toFixed(1)+'%';
+        document.getElementById('fm-stat-timeout-pct').textContent = ((timeouts/total)*100).toFixed(1)+'%';
+        document.getElementById('fm-stat-ok-pct').textContent      = ((ok/total)*100).toFixed(1)+'%';
+      }
+      setMsg('◎', `Stats: ${errors} errores · ${timeouts} timeouts · ${ok} OK · ${running} running`);
       await sleep(300);
-      const errorFlows   = await loadStateFromDOM('error',   errors,   Math.ceil(errors/50));
+      const errorFlows   = await loadStateFromDOM('error',   errors,  Math.ceil(errors/50));
       const timeoutFlows = await loadStateFromDOM('timeout', timeouts, Math.ceil(timeouts/50));
       const okFlows      = await loadStateFromDOM('ok',      ok,       Math.ceil(ok/50));
-      const runningFlows = await loadStateFromDOM('running', 999,      1);
+      const runningFlows = await loadStateFromDOM('running', running,  Math.ceil(Math.max(running,1)/50));
       allFlows = [...errorFlows, ...timeoutFlows, ...okFlows, ...runningFlows];
       const globalSeen = new Set();
       allFlows = allFlows.filter(f => { if (globalSeen.has(f.id)) return false; globalSeen.add(f.id); return true; });
       document.getElementById('fm-date').textContent = new Date().toLocaleDateString('es-AR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
-      navigateDashboard({ state: null, page: 1 });
-      await waitForFlows(3000);
       renderList();
       setMsg('✓', `Listo: ${allFlows.length} flows cargados`);
       loadErrorDetailsInBackground([...errorFlows, ...timeoutFlows]);
@@ -374,7 +384,22 @@
     if (groupByError) renderList();
   }
 
-  async function loadStateFromDOM(state, total, totalPages) {
+  async function fetchStateTotals() {
+    const getTotal = async (state) => {
+      try {
+        const r = await fetch(`/dashboard?per_page=50&page=1&states%5B%5D=${state}`, {credentials:'include'});
+        const html = await r.text();
+        const m = html.match(/Mostrando\s+\d+\s*-\s*\d+\s+de\s+(\d+)/);
+        return m ? parseInt(m[1]) : 0;
+      } catch(e) { return 0; }
+    };
+    const [errors, timeouts, ok, running] = await Promise.all([
+      getTotal('error'), getTotal('timeout'), getTotal('ok'), getTotal('running')
+    ]);
+    return { errors, timeouts, ok, running };
+  }
+
+    async function loadStateFromDOM(state, total, totalPages) {
     if (total === 0) return [];
     const flows = [], seen = new Set(), label = state==='error'?'errores':state==='timeout'?'timeouts':'OK';
     for (let page = 1; page <= totalPages; page++) {
