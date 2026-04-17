@@ -407,10 +407,7 @@
     async function loadAllFlows() {
     const flows = [], seen = new Set();
     for (let page = 1; page <= 50; page++) {
-      const result = await fetchFlowsFromPage(null, page);
-      const pf = result.flows || [];
-      const to = result.to || 0;
-      const total = result.total || 0;
+      const { flows: pf, to, total } = await fetchFlowsFromPage(null, page);
       for (const f of pf) {
         if (!seen.has(f.id)) { seen.add(f.id); flows.push(f); }
       }
@@ -461,12 +458,55 @@
     if (state==='timeout') p.set('states[]','timeout');
     if (state==='ok')      p.set('states[]','ok');
     if (state==='running') p.set('states[]','running');
-    // state===null significa sin filtro (todos los flows)
+    // state===null: sin filtro, devuelve todos
     try {
       const r = await fetch(`/dashboard?${p.toString()}`, { credentials:'include' });
       const html = await r.text();
-      return parseFlowsFromHTML(html, state);
-    } catch(e) { return []; }
+      const flows = parseFlowsFromHTML(html, state || 'ok');
+      const m = html.match(/Mostrando\s+(\d+)\s*-\s*(\d+)\s+de\s+(\d+)/);
+      const to    = m ? parseInt(m[2]) : 0;
+      const total = m ? parseInt(m[3]) : 0;
+      return { flows, to, total };
+    } catch(e) { return { flows:[], to:0, total:0 }; }
+  }
+
+  async function loadAllFlows() {
+    const flows = [], seen = new Set();
+    for (let page = 1; page <= 50; page++) {
+      const res = await fetchFlowsFromPage(null, page);
+      const pf    = Array.isArray(res.flows) ? res.flows : [];
+      const to    = res.to    || 0;
+      const total = res.total || 0;
+      for (const f of pf) {
+        if (!seen.has(f.id)) { seen.add(f.id); flows.push(f); }
+      }
+      setMsg('◎', `Cargando flows... ${flows.length}`);
+      if (pf.length === 0 || total === 0 || to >= total) break;
+    }
+    return flows;
+  }
+
+  async function fetchStateMap() {
+    const getIds = async (state) => {
+      const ids = new Set();
+      for (let page = 1; page <= 50; page++) {
+        const res = await fetchFlowsFromPage(state, page);
+        const pf    = Array.isArray(res.flows) ? res.flows : [];
+        const to    = res.to    || 0;
+        const total = res.total || 0;
+        pf.forEach(f => ids.add(f.id));
+        if (pf.length === 0 || total === 0 || to >= total) break;
+      }
+      return ids;
+    };
+    const [errorIds, timeoutIds, runningIds] = await Promise.all([
+      getIds('error'), getIds('timeout'), getIds('running')
+    ]);
+    const map = {};
+    runningIds.forEach(id => map[id] = 'running');
+    timeoutIds.forEach(id => map[id] = 'timeout');
+    errorIds.forEach(id  => map[id] = 'error');
+    return map;
   }
 
   function parseFlowsFromHTML(html, state) {
