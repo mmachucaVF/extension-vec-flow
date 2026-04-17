@@ -411,15 +411,22 @@
       const batch = flows.slice(i, i + BATCH);
       await Promise.all(batch.map(async f => {
         try {
-          const res = await fetch(`/flows/${f.id}/last_execution`, { credentials: 'include' });
-          if (!res.ok) return;
-          const data = await res.json();
-          const raw = data?.pipeline?.processes?.map(p =>
-            (p.errors || []).map(e => e.message || e.error || JSON.stringify(e)).join('\n')
-          ).filter(Boolean).join('\n') || '';
-          f.errors = raw.slice(0, 300).trim() || 'Sin detalle';
+          // Paso 1: obtener el executionId más reciente
+          const pageR = await fetch(`/flows/${f.id}`, { credentials: 'include' });
+          const pageHtml = await pageR.text();
+          const execM = pageHtml.match(/executions\/(\d+)\/download/);
+          if (!execM) { f.errors = 'Sin detalle'; return; }
+          const execId = execM[1];
+          f.executionId = execId;
+          // Paso 2: descargar el reporte de esa ejecución
+          const logR = await fetch(`/executions/${execId}/download`, { credentials: 'include' });
+          if (!logR.ok) { f.errors = 'Sin detalle'; return; }
+          const logText = await logR.text();
+          // Paso 3: parsear el error del reporte
+          const errM = logText.match(/ERROR[:\s]+([^\n]{5,300})/i) || logText.match(/Exception[:\s]+([^\n]{5,300})/i) || logText.match(/Code:\s*\d+[^\n]{0,200}/i) || logText.match(/(?:error|fallo)[:\s]+([^\n]{5,200})/i);
+          const raw = errM ? errM[0].trim() : '';
+          f.errors    = raw.slice(0, 300) || 'Sin detalle';
           f.errorsRaw = raw;
-          f.executionId = data?.id;
         } catch(e) { f.errors = 'Sin detalle'; }
       }));
       done += batch.length;
@@ -430,7 +437,6 @@
     if (loadingEl) loadingEl.remove();
     if (groupByError) renderList();
   }
-
 
   async function fetchStateTotals() {
     const getTotal = async (state) => {
