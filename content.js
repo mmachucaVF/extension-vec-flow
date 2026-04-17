@@ -380,14 +380,57 @@
   }
 
   async function loadErrorDetailsInBackground(flows) {
+    if (!flows.length) return;
+    const container = document.getElementById('fm-list-content');
+    const total = flows.length;
+    let done = 0;
+
+    const showProgress = () => {
+      const existing = document.getElementById('fm-err-loading');
+      if (existing) {
+        existing.querySelector('.fm-err-txt').textContent = 'Cargando detalles... ' + done + '/' + total;
+        existing.querySelector('.fm-err-fill').style.width = Math.round((done/total)*100) + '%';
+        return;
+      }
+      if (!container) return;
+      const div = document.createElement('div');
+      div.id = 'fm-err-loading';
+      div.style.cssText = 'padding:28px 20px;display:flex;flex-direction:column;align-items:center;gap:14px';
+      div.innerHTML = '<span class="fm-err-txt" style="font-size:11px;color:#7c8494">Cargando detalles... 0/' + total + '</span>'
+        + '<div style="width:80%;height:3px;background:rgba(255,255,255,.08);border-radius:2px">'
+        + '<div class="fm-err-fill" style="height:100%;width:0%;background:#6c63ff;border-radius:2px;transition:width .3s"></div>'
+        + '</div>';
+      container.innerHTML = '';
+      container.appendChild(div);
+    };
+
+    if (groupByError) showProgress();
+
     const BATCH = 5;
     for (let i = 0; i < flows.length; i += BATCH) {
       const batch = flows.slice(i, i + BATCH);
-      await Promise.all(batch.map(f => loadFlowDetail(f)));
-      if (groupByError) renderList();
+      await Promise.all(batch.map(async f => {
+        try {
+          const res = await fetch(`/flows/${f.id}/last_execution`, { credentials: 'include' });
+          if (!res.ok) return;
+          const data = await res.json();
+          const raw = data?.pipeline?.processes?.map(p =>
+            (p.errors || []).map(e => e.message || e.error || JSON.stringify(e)).join('\n')
+          ).filter(Boolean).join('\n') || '';
+          f.errors = raw.slice(0, 300).trim() || 'Sin detalle';
+          f.errorsRaw = raw;
+          f.executionId = data?.id;
+        } catch(e) { f.errors = 'Sin detalle'; }
+      }));
+      done += batch.length;
+      if (groupByError) showProgress();
     }
+
+    const loadingEl = document.getElementById('fm-err-loading');
+    if (loadingEl) loadingEl.remove();
     if (groupByError) renderList();
   }
+
 
   async function fetchStateTotals() {
     const getTotal = async (state) => {
@@ -705,8 +748,8 @@
         </div>
         <div class="fm-error-group-meta" onclick="event.stopPropagation()">
           <span class="fm-group-cnt" style="color:${clr};font-weight:600">${g.flows.length} flow${g.flows.length!==1?'s':''}</span>
-          <button class="fm-chip" style="font-size:9px;padding:2px 7px" data-action="sel-group" data-group-key="${esc(g.label)}">${allSel?'☑️':'☐'} sel.</button>
-          <button class="fm-chip" style="font-size:9px;padding:2px 7px;background:rgba(108,99,255,.15);border-color:rgba(108,99,255,.35);color:#8c85ff" data-action="ticket-group" data-group-key="${esc(g.label)}">🎫 ticket</button>
+          <button class="fm-chip" style="font-size:9px;padding:2px 7px" data-action="sel-group" data-group-key="${esc(g.key)}">${allSel?'☑️':'☐'} sel.</button>
+          <button class="fm-chip" style="font-size:9px;padding:2px 7px;background:rgba(108,99,255,.15);border-color:rgba(108,99,255,.35);color:#8c85ff" data-action="ticket-group" data-group-key="${esc(g.key)}">🎫 ticket</button>
         </div>
       </div>${exp?`<div class="fm-error-group-body">${g.flows.map(rowHtml).join('')}</div>`:''}</div>`;
     }
