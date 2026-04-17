@@ -411,20 +411,30 @@
       const batch = flows.slice(i, i + BATCH);
       await Promise.all(batch.map(async f => {
         try {
-          // Paso 1: obtener el executionId más reciente
           const pageR = await fetch(`/flows/${f.id}`, { credentials: 'include' });
           const pageHtml = await pageR.text();
           const execM = pageHtml.match(/executions\/(\d+)\/download/);
           if (!execM) { f.errors = 'Sin detalle'; return; }
           const execId = execM[1];
           f.executionId = execId;
-          // Paso 2: descargar el reporte de esa ejecución
           const logR = await fetch(`/executions/${execId}/download`, { credentials: 'include' });
           if (!logR.ok) { f.errors = 'Sin detalle'; return; }
           const logText = await logR.text();
-          // Paso 3: parsear el error del reporte
-          const errM = logText.match(/ERROR[:\s]+([^\n]{5,300})/i) || logText.match(/Exception[:\s]+([^\n]{5,300})/i) || logText.match(/Code:\s*\d+[^\n]{0,200}/i) || logText.match(/(?:error|fallo)[:\s]+([^\n]{5,200})/i);
-          const raw = errM ? errM[0].trim() : '';
+          // El log tiene un JSON al final con processes[].errors
+          const jsonStart = logText.lastIndexOf('{');
+          let raw = '';
+          if (jsonStart >= 0) {
+            try {
+              const data = JSON.parse(logText.slice(jsonStart));
+              const errs = (data.processes || []).map(p => (p.errors || '').trim()).filter(Boolean);
+              raw = errs.join(' | ').slice(0, 300);
+            } catch(e) {}
+          }
+          // Fallback: buscar en el texto plano
+          if (!raw) {
+            const m = logText.match(/(?:Error|Exception|Code:\s*\d+)[^\n]{5,200}/i);
+            raw = m ? m[0].trim() : '';
+          }
           f.errors    = raw.slice(0, 300) || 'Sin detalle';
           f.errorsRaw = raw;
         } catch(e) { f.errors = 'Sin detalle'; }
