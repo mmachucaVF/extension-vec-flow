@@ -396,6 +396,7 @@
     if (state==='error')   p.set('states[]','error');
     if (state==='timeout') p.set('states[]','timeout');
     if (state==='ok')      p.set('states[]','ok');
+    const ppSel=document.querySelector('select[name="per_page"]');if(ppSel&&ppSel.value!==String(perPage)){ppSel.value=String(perPage);ppSel.dispatchEvent(new Event('change',{bubbles:true}));}
     history.pushState({}, '', `/dashboard?${p.toString()}`);
     window.dispatchEvent(new PopStateEvent('popstate', { state:{} }));
   }
