@@ -378,10 +378,7 @@
     const flows = [], seen = new Set(), label = state==='error'?'errores':state==='timeout'?'timeouts':'OK';
     for (let page = 1; page <= totalPages; page++) {
       setMsg('◎', `Cargando ${label}... p.${page}/${totalPages}`);
-      navigateDashboard({ state, page, perPage: 50 });
-      const ok = await waitForFlows(8000);
-      if (!ok) break;
-      const pf = readFlowsFromDOM(state);
+      const pf = await fetchFlowsFromPage(state, page);
       let added = 0;
       for (const f of pf) {
         if (!seen.has(f.id)) { seen.add(f.id); flows.push(f); added++; }
@@ -391,12 +388,40 @@
     return flows;
   }
 
+  async function fetchFlowsFromPage(state, page) {
+    const p = new URLSearchParams({ search:'', environment_id:'', status:'active', sort_by:'last_run', sort_dir:'desc', per_page:50, page:page||1 });
+    if (state==='error')   p.set('states[]','error');
+    if (state==='timeout') p.set('states[]','timeout');
+    if (state==='ok')      p.set('states[]','ok');
+    try {
+      const r = await fetch(`/dashboard?${p.toString()}`, { credentials:'include' });
+      const html = await r.text();
+      return parseFlowsFromHTML(html, state);
+    } catch(e) { return []; }
+  }
+
+  function parseFlowsFromHTML(html, state) {
+    const flows = [], seen = new Set();
+    const matches = [...html.matchAll(/href="https:\/\/flow\.vecfleet\.io\/flows\/(\d+)"\s+class="text-lg[^"]*"[^>]*>([^<]+)/g)];
+    for (const m of matches) {
+      const id = m[1], name = m[2].trim().replace(/&gt;/g,'>').replace(/&lt;/g,'<').replace(/&amp;/g,'&');
+      if (!name || name.length < 4 || seen.has(id)) continue;
+      seen.add(id);
+      const pos = m.index;
+      const ctx = html.slice(Math.max(0,pos-200), pos+500);
+      const timeM = ctx.match(/hace\s+([\d]+\s+\w+)/);
+      const typeM = ctx.match(/VecfleetHttpRequester|VecfleetDbQuery|VecfleetSshCommand/);
+      const freqM = ctx.match(/\["?([^"\]]+)"?\]/);
+      flows.push({ id, name, desc:'', state, lastRun:timeM?`hace ${timeM[1]}`:'\u2014', type:typeM?typeM[0]:'Unknown', freq:freqM?freqM[1]:'', errors:'', executionId:null });
+    }
+    return flows;
+  }
+
   function navigateDashboard({ state, page, perPage = 50 }) {
     const p = new URLSearchParams({ search:'', environment_id:'', status:'active', sort_by:'last_run', sort_dir:'desc', per_page:perPage, page:page||1 });
     if (state==='error')   p.set('states[]','error');
     if (state==='timeout') p.set('states[]','timeout');
     if (state==='ok')      p.set('states[]','ok');
-    const ppSel=document.querySelector('select[name="per_page"]');if(ppSel&&ppSel.value!==String(perPage)){ppSel.value=String(perPage);ppSel.dispatchEvent(new Event('change',{bubbles:true}));}
     history.pushState({}, '', `/dashboard?${p.toString()}`);
     window.dispatchEvent(new PopStateEvent('popstate', { state:{} }));
   }
