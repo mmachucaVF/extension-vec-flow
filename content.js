@@ -383,7 +383,7 @@
       for (const f of pf) {
         if (!seen.has(f.id)) { seen.add(f.id); flows.push(f); added++; }
       }
-      if (added === 0) break;
+      if (pf.length === 0) break; // parar solo si el servidor devolvió 0 flows
     }
     return flows;
   }
