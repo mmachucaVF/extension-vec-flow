@@ -316,9 +316,9 @@
         'row-click':          () => handleClick(el.dataset.id),
         'page':               () => goToPage(parseInt(el.dataset.page)),
         'add-jira':           () => addAndJira(el.dataset.flowId),
-        'sel-group':          () => selectGroup(el.dataset.groupKey),
-        'ticket-group':       () => ticketGroup(el.dataset.groupKey),
-        'toggle-err-group':   () => toggleErrGroup(el.dataset.groupKey),
+        'sel-group':          () => selectGroup(el.getAttribute('data-group-key')),
+        'ticket-group':       () => ticketGroup(el.getAttribute('data-group-key')),
+        'toggle-err-group':   () => toggleErrGroup(el.getAttribute('data-group-key')),
         'run-diagnosis':      () => runDiagnosis(el.dataset.flowId),
       }[a] || (() => {}))();
     });
