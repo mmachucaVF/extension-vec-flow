@@ -473,15 +473,19 @@
   async function loadAllFlows() {
     const flows = [], seen = new Set();
     for (let page = 1; page <= 50; page++) {
-      const res = await fetchFlowsFromPage(null, page);
-      const pf    = Array.isArray(res.flows) ? res.flows : [];
-      const to    = res.to    || 0;
-      const total = res.total || 0;
-      for (const f of pf) {
-        if (!seen.has(f.id)) { seen.add(f.id); flows.push(f); }
-      }
-      setMsg('◎', `Cargando flows... ${flows.length}`);
-      if (pf.length === 0 || total === 0 || to >= total) break;
+      try {
+        const r = await fetch(`/dashboard?search=&environment_id=&status=active&sort_by=last_run&sort_dir=desc&per_page=50&page=${page}`, {credentials:'include'});
+        const html = await r.text();
+        const m = html.match(/Mostrando\s+(\d+)\s*-\s*(\d+)\s+de\s+(\d+)/);
+        const to    = m ? parseInt(m[2]) : 0;
+        const total = m ? parseInt(m[3]) : 0;
+        const pf = parseFlowsFromHTML(html, 'ok');
+        for (const f of pf) {
+          if (!seen.has(f.id)) { seen.add(f.id); flows.push(f); }
+        }
+        setMsg('◎', `Cargando flows... ${flows.length}/${total}`);
+        if (pf.length === 0 || total === 0 || to >= total) break;
+      } catch(e) { break; }
     }
     return flows;
   }
