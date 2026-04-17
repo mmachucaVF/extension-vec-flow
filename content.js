@@ -411,28 +411,31 @@
       const batch = flows.slice(i, i + BATCH);
       await Promise.all(batch.map(async f => {
         try {
+          // Obtener execId del HTML del flow
           const pageR = await fetch(`/flows/${f.id}`, { credentials: 'include' });
           const pageHtml = await pageR.text();
           const execM = pageHtml.match(/executions\/(\d+)\/download/);
           if (!execM) { f.errors = 'Sin detalle'; return; }
-          const execId = execM[1];
-          f.executionId = execId;
-          const logR = await fetch(`/executions/${execId}/download`, { credentials: 'include' });
+          f.executionId = execM[1];
+          // Descargar el reporte de ejecución
+          const logR = await fetch(`/executions/${f.executionId}/download`, { credentials: 'include' });
           if (!logR.ok) { f.errors = 'Sin detalle'; return; }
           const logText = await logR.text();
-          // El log tiene un JSON al final con processes[].errors
-          const jsonStart = logText.lastIndexOf('{');
+          // Parsear el JSON del reporte (está después del último separador ===)
+          const sepIdx = logText.lastIndexOf('=====');
+          const afterSep = sepIdx >= 0 ? logText.slice(sepIdx + 5).trim() : logText;
+          const jsonStart = afterSep.indexOf('{');
           let raw = '';
           if (jsonStart >= 0) {
             try {
-              const data = JSON.parse(logText.slice(jsonStart));
+              const data = JSON.parse(afterSep.slice(jsonStart));
               const errs = (data.processes || []).map(p => (p.errors || '').trim()).filter(Boolean);
               raw = errs.join(' | ').slice(0, 300);
             } catch(e) {}
           }
-          // Fallback: buscar en el texto plano
+          // Fallback: texto plano del reporte
           if (!raw) {
-            const m = logText.match(/(?:Error|Exception|Code:\s*\d+)[^\n]{5,200}/i);
+            const m = logText.match(/(?:Code:\s*\d+|Exception|ErrorException)[^\n]{5,200}/i);
             raw = m ? m[0].trim() : '';
           }
           f.errors    = raw.slice(0, 300) || 'Sin detalle';
