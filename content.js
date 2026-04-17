@@ -367,6 +367,8 @@
       const globalSeen = new Set();
       allFlows = allFlows.filter(f => { if (globalSeen.has(f.id)) return false; globalSeen.add(f.id); return true; });
       document.getElementById('fm-date').textContent = new Date().toLocaleDateString('es-AR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
+      // Actualizar el total con el número real cargado (puede diferir del snapshot inicial)
+      document.getElementById('fm-stat-total').textContent = allFlows.length;
       renderList();
       setMsg('✓', `Listo: ${allFlows.length} flows cargados`);
       loadErrorDetailsInBackground([...errorFlows, ...timeoutFlows]);
@@ -403,11 +405,11 @@
     const flows = [], seen = new Set(), label = state==='error'?'errores':state==='timeout'?'timeouts':state==='running'?'running':'OK';
     for (let page = 1; page <= 50; page++) {
       setMsg('◎', `Cargando ${label}... p.${page}`);
-      const { flows: pf, to, total } = await fetchFlowsFromPage(state, page);
+      const pf = await fetchFlowsFromPage(state, page);
       for (const f of pf) {
         if (!seen.has(f.id)) { seen.add(f.id); flows.push(f); }
       }
-      if (pf.length === 0 || total === 0 || to >= total) break;
+      if (pf.length === 0) break;
     }
     return flows;
   }
@@ -421,13 +423,8 @@
     try {
       const r = await fetch(`/dashboard?${p.toString()}`, { credentials:'include' });
       const html = await r.text();
-      const flows = parseFlowsFromHTML(html, state);
-      // Leer el "Mostrando X - Y de TOTAL" para saber si hay más páginas
-      const m = html.match(/Mostrando\s+(\d+)\s*-\s*(\d+)\s+de\s+(\d+)/);
-      const to    = m ? parseInt(m[2]) : 0;
-      const total = m ? parseInt(m[3]) : 0;
-      return { flows, to, total };
-    } catch(e) { return { flows:[], to:0, total:0 }; }
+      return parseFlowsFromHTML(html, state);
+    } catch(e) { return []; }
   }
 
   function parseFlowsFromHTML(html, state) {
