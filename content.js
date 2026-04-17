@@ -835,18 +835,36 @@
 
   function addAndJira(id){selectedIds.add(id);renderList();openJiraModal();}
 
-  function openJiraModal() {
-    if(!selectedIds.size)return;
-    const sel=allFlows.filter(f=>selectedIds.has(f.id));
+  function openJiraModal(errorKey, groupFlows) {
+    if (!errorKey && !selectedIds.size) return;
+    const sel = groupFlows || allFlows.filter(f => selectedIds.has(f.id));
     const fnames=[...new Set(sel.map(f=>{const m=f.name?.match(/\|\s*(.+)$/);return m?m[1].trim():f.name;}))];
     const clients=[...new Set(sel.map(f=>{const m=f.name?.match(/>\s*([^|>]+?)\s*\|/);return m?m[1].trim():null;}).filter(Boolean))];
     const fname=fnames.length===1?fnames[0]:`${sel.length} flows`;
     const title=clients.length<=2?`[Flow Monitor] ${fname} — ${clients.join(', ')||new Date().toLocaleDateString('es-AR')}`:`[Flow Monitor] ${fname} — ${clients.length} clientes`;
     document.getElementById('fm-modal-title').textContent='Crear ticket en Jira';
     document.getElementById('fm-jira-title').value=title;
-    document.getElementById('fm-jira-desc').value=generateDesc(sel);
+    document.getElementById('fm-jira-desc').value = errorKey
+      ? generateGroupDesc(errorKey, sel)
+      : generateDesc(sel);
     document.getElementById('fm-modal-overlay').classList.add('fm-visible');
     populateJiraModal();
+  }
+
+  function generateGroupDesc(errorKey, flows) {
+    const lines = [];
+    lines.push('*Error detectado:*');
+    lines.push('{code}' + errorKey + '{code}');
+    lines.push('');
+    lines.push('*Flows afectados (' + flows.length + '):*');
+    flows.forEach(f => {
+      const detail = (f.errorsRaw || '').trim();
+      const extra  = detail && detail !== errorKey ? '\n  ' + detail.slice(0, 200) : '';
+      lines.push('* [' + f.id + '] ' + f.name + extra);
+    });
+    lines.push('');
+    lines.push('_Generado por Flow Monitor \u2014 ' + new Date().toLocaleString('es-AR') + '_');
+    return lines.join('\n');
   }
 
   function generateDesc(flows) {
