@@ -343,35 +343,38 @@
     allFlows = []; currentPage = 1;
     try {
       showLoading('Leyendo totales...');
-      const realTotals = await fetchStateTotals();
-      const { errors, timeouts, ok, running } = realTotals;
-      parseStatsFromDOM();
-      // Actualizar stats del panel con valores reales
-      document.getElementById('fm-stat-total').textContent    = errors+timeouts+ok+running || '—';
-      document.getElementById('fm-stat-errors').textContent   = errors   || '—';
-      document.getElementById('fm-stat-timeouts').textContent = timeouts || '—';
-      document.getElementById('fm-stat-ok-val').textContent   = ok       || '—';
-      const total = errors+timeouts+ok+running;
+      // Paso 1: cargar todos los flows SIN filtro (snapshot consistente de IDs+nombres)
+      setMsg('◎', 'Cargando todos los flows...');
+      allFlows = await loadAllFlows();
+      
+      // Paso 2: en paralelo, obtener el estado actual de cada flow
+      setMsg('◎', 'Leyendo estados...');
+      const stateMap = await fetchStateMap();
+      
+      // Paso 3: asignar estado a cada flow
+      for (const f of allFlows) {
+        f.state = stateMap[f.id] || 'ok';
+      }
+      
+      // Actualizar stats del panel
+      const errors   = allFlows.filter(f=>f.state==='error').length;
+      const timeouts = allFlows.filter(f=>f.state==='timeout').length;
+      const running  = allFlows.filter(f=>f.state==='running').length;
+      const ok       = allFlows.filter(f=>f.state==='ok').length;
+      const total    = allFlows.length;
+      document.getElementById('fm-stat-total').textContent    = total;
+      document.getElementById('fm-stat-errors').textContent   = errors;
+      document.getElementById('fm-stat-timeouts').textContent = timeouts;
+      document.getElementById('fm-stat-ok-val').textContent   = ok;
       if (total>0) {
         document.getElementById('fm-stat-error-pct').textContent   = ((errors/total)*100).toFixed(1)+'%';
         document.getElementById('fm-stat-timeout-pct').textContent = ((timeouts/total)*100).toFixed(1)+'%';
         document.getElementById('fm-stat-ok-pct').textContent      = ((ok/total)*100).toFixed(1)+'%';
       }
-      setMsg('◎', `Stats: ${errors} errores · ${timeouts} timeouts · ${ok} OK · ${running} running`);
-      await sleep(300);
-      const errorFlows   = await loadStateFromDOM('error');
-      const timeoutFlows = await loadStateFromDOM('timeout');
-      const okFlows      = await loadStateFromDOM('ok');
-      const runningFlows = await loadStateFromDOM('running');
-      allFlows = [...errorFlows, ...timeoutFlows, ...okFlows, ...runningFlows];
-      const globalSeen = new Set();
-      allFlows = allFlows.filter(f => { if (globalSeen.has(f.id)) return false; globalSeen.add(f.id); return true; });
       document.getElementById('fm-date').textContent = new Date().toLocaleDateString('es-AR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
-      // Actualizar el total con el número real cargado (puede diferir del snapshot inicial)
-      document.getElementById('fm-stat-total').textContent = allFlows.length;
       renderList();
-      setMsg('✓', `Listo: ${allFlows.length} flows cargados`);
-      loadErrorDetailsInBackground([...errorFlows, ...timeoutFlows]);
+      setMsg('✓', `Listo: ${total} flows cargados`);
+      loadErrorDetailsInBackground(allFlows.filter(f=>f.state==='error'||f.state==='timeout'));
     } catch(e) { console.error('[FlowMonitor]', e); showError(e.message); }
     btn.textContent = '🔄 Actualizar'; btn.disabled = false;
   }
@@ -401,7 +404,42 @@
     return { errors, timeouts, ok, running };
   }
 
-    async function loadStateFromDOM(state) {
+    async function loadAllFlows() {
+    const flows = [], seen = new Set();
+    for (let page = 1; page <= 50; page++) {
+      const { flows: pf, to, total } = await fetchFlowsFromPage(null, page);
+      for (const f of pf) {
+        if (!seen.has(f.id)) { seen.add(f.id); flows.push(f); }
+      }
+      setMsg('◎', `Cargando flows... ${flows.length}`);
+      if (pf.length === 0 || total === 0 || to >= total) break;
+    }
+    return flows;
+  }
+
+  async function fetchStateMap() {
+    // Fetch paralelo de los 4 estados para mapear id->estado
+    const getIds = async (state) => {
+      const ids = new Set();
+      for (let page = 1; page <= 50; page++) {
+        const { flows, to, total } = await fetchFlowsFromPage(state, page);
+        flows.forEach(f => ids.add(f.id));
+        if (flows.length === 0 || total === 0 || to >= total) break;
+      }
+      return ids;
+    };
+    const [errorIds, timeoutIds, runningIds] = await Promise.all([
+      getIds('error'), getIds('timeout'), getIds('running')
+    ]);
+    // Construir mapa: error > timeout > running > ok (prioridad)
+    const map = {};
+    runningIds.forEach(id => map[id] = 'running');
+    timeoutIds.forEach(id => map[id] = 'timeout');
+    errorIds.forEach(id  => map[id] = 'error');
+    return map;
+  }
+
+  async function loadStateFromDOM(state) {
     const flows = [], seen = new Set(), label = state==='error'?'errores':state==='timeout'?'timeouts':state==='running'?'running':'OK';
     for (let page = 1; page <= 50; page++) {
       setMsg('◎', `Cargando ${label}... p.${page}`);
@@ -420,6 +458,7 @@
     if (state==='timeout') p.set('states[]','timeout');
     if (state==='ok')      p.set('states[]','ok');
     if (state==='running') p.set('states[]','running');
+    // state===null significa sin filtro (todos los flows)
     try {
       const r = await fetch(`/dashboard?${p.toString()}`, { credentials:'include' });
       const html = await r.text();
