@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Flow Monitor \u2014 VecFleet",
+  "name": "Flow Monitor — VecFleet",
   "version": "2.1",
-  "description": "Monitor de flows: errores, timeouts, diagn\u00f3stico IA y tickets Jira",
+  "description": "Monitor de flows: errores, timeouts, diagnóstico IA y tickets Jira",
   "permissions": [
     "clipboardWrite",
     "storage"
@@ -13,7 +13,19 @@
     "https://*.atlassian.net/*"
   ],
   "action": {
-    "default_title": "Flow Monitor"
+    "default_title": "Flow Monitor",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
   },
   "content_scripts": [
     {
