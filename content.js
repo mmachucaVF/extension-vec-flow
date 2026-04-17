@@ -350,7 +350,8 @@
       const errorFlows   = await loadStateFromDOM('error',   errors,   Math.ceil(errors/50));
       const timeoutFlows = await loadStateFromDOM('timeout', timeouts, Math.ceil(timeouts/50));
       const okFlows      = await loadStateFromDOM('ok',      ok,       Math.ceil(ok/50));
-      allFlows = [...errorFlows, ...timeoutFlows, ...okFlows];
+      const runningFlows = await loadStateFromDOM('running', 999,      1);
+      allFlows = [...errorFlows, ...timeoutFlows, ...okFlows, ...runningFlows];
       const globalSeen = new Set();
       allFlows = allFlows.filter(f => { if (globalSeen.has(f.id)) return false; globalSeen.add(f.id); return true; });
       document.getElementById('fm-date').textContent = new Date().toLocaleDateString('es-AR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
@@ -393,6 +394,7 @@
     if (state==='error')   p.set('states[]','error');
     if (state==='timeout') p.set('states[]','timeout');
     if (state==='ok')      p.set('states[]','ok');
+    if (state==='running') p.set('states[]','running');
     try {
       const r = await fetch(`/dashboard?${p.toString()}`, { credentials:'include' });
       const html = await r.text();
@@ -422,6 +424,7 @@
     if (state==='error')   p.set('states[]','error');
     if (state==='timeout') p.set('states[]','timeout');
     if (state==='ok')      p.set('states[]','ok');
+    if (state==='running') p.set('states[]','running');
     history.pushState({}, '', `/dashboard?${p.toString()}`);
     window.dispatchEvent(new PopStateEvent('popstate', { state:{} }));
   }
