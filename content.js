@@ -935,16 +935,15 @@
     const sel = groupFlows || allFlows.filter(f => selectedIds.has(f.id));
     if (!sel.length) return;
 
-    // Extraer cliente real: "[PROD Env.] > CLIENTE | ..." -> "CLIENTE"
+    // Contar clientes con regex [CLIENTE] — mismo criterio que generateGroupDesc
     const clients = [...new Set(sel.map(f => {
-      const m = f.name.match(/\]\s*>\s*([^|>[\]]+?)\s*\|/);
-      return m ? m[1].trim() : null;
+      const m = f.name.match(/\[([^\]]+)\]/);
+      return m ? m[1] : null;
     }).filter(Boolean))];
 
-    const title = '[Flow Monitor] ' + sel.length + ' flows — ' +
-      (clients.length > 0
-        ? clients.length + ' cliente' + (clients.length !== 1 ? 's' : '')
-        : new Date().toLocaleDateString('es-AR'));
+    const title = errorKey
+      ? '[Flow Monitor] ' + sel.length + ' flows — ' + clients.length + ' cliente' + (clients.length !== 1 ? 's' : '')
+      : '[Flow Monitor] ' + sel.length + ' flows — ' + (clients.length > 0 ? clients.length + ' cliente' + (clients.length !== 1 ? 's' : '') : new Date().toLocaleDateString('es-AR'));
 
     document.getElementById('fm-jira-title').value = title;
     document.getElementById('fm-jira-desc').value = errorKey
@@ -954,36 +953,51 @@
     populateJiraModal();
   }
   function generateGroupDesc(errorKey, flows) {
-    var cleanError = errorKey
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim()
-      .slice(0, 200);
+    // Parsear el error para extraer info útil para DevOps
+    var raw = errorKey.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 
-    // Extraer cliente real: "[PROD Env.] > CLIENTE | ..." -> "CLIENTE"
+    // Extraer: Code, File, Line si existen
+    var codeMatch = raw.match(/Code:\s*(\d+)/i);
+    var fileMatch = raw.match(/File:\s*(\S+\.php)/i);
+    var lineMatch = raw.match(/\(Line\s*(\d+)\)/i);
+    var httpMatch = raw.match(/\b(4\d{2}|5\d{2})\b/);
+
+    var errorSummary = [];
+    if (httpMatch)  errorSummary.push('HTTP ' + httpMatch[1]);
+    if (codeMatch)  errorSummary.push('Code: ' + codeMatch[1]);
+    if (fileMatch)  errorSummary.push('Archivo: ' + fileMatch[1].split('/').pop());
+    if (lineMatch)  errorSummary.push('Linea: ' + lineMatch[1]);
+    if (!errorSummary.length) errorSummary.push(raw.slice(0, 120));
+
+    // Extraer clientes
     var clients = new Set(flows.map(function(f) {
       var m = f.name.match(/\]\s*>\s*([^|>[\]]+?)\s*\|/);
       return m ? m[1].trim() : null;
     }).filter(Boolean));
 
-    var parts = [];
+    // Construir el texto con doble newline entre CADA sección
+    // para forzar párrafos separados en Jira
+    var out = [];
 
-    parts.push(
-      'ERROR EN ' + flows.length + ' FLOW' + (flows.length !== 1 ? 'S' : '') +
-      ' | ' + clients.size + ' CLIENTE' + (clients.size !== 1 ? 'S' : '')
+    out.push('ERROR EN ' + flows.length + ' FLOWS | ' + clients.size + ' CLIENTES');
+
+    out.push(
+      'RESUMEN DEL ERROR\n' +
+      errorSummary.join(' | ') + '\n' +
+      'Detalle completo: ' + raw.slice(0, 180)
     );
 
-    parts.push('MENSAJE DE ERROR:\n' + cleanError);
+    out.push('FLOWS AFECTADOS (' + flows.length + ')');
 
-    var flowLines = ['FLOWS AFECTADOS (' + flows.length + '):'];
+    // Cada flow como elemento separado con doble newline
     flows.forEach(function(f) {
-      flowLines.push('[' + f.id + '] ' + f.name + ' -> https://flow.vecfleet.io/flows/' + f.id);
+      out.push('[' + f.id + '] ' + f.name + '\nhttps://flow.vecfleet.io/flows/' + f.id);
     });
-    parts.push(flowLines.join('\n'));
 
-    parts.push('Generado por Flow Monitor - ' + new Date().toLocaleString('es-AR'));
+    out.push('Generado por Flow Monitor - ' + new Date().toLocaleString('es-AR'));
 
-    return parts.join('\n\n');
+    // Unir TODO con doble newline — unico separador que Jira respeta en texto plano
+    return out.join('\n\n');
   }
 
   function generateDesc(flows) {
