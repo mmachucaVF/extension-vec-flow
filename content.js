@@ -978,6 +978,7 @@
     var httpCode   = httpMatch ? parseInt(httpMatch[1]) : 0;
     var fileName   = fileMatch ? fileMatch[1].split('/').pop() : '';
     var lineNum    = lineMatch ? lineMatch[1] : '';
+    // Extraer JSON embebido si existe
     var jsonStart  = raw.indexOf('{');
     var errorMsg   = '';
     var errorJson  = '';
@@ -993,15 +994,25 @@
           var parts = procs[0].name.split('\\\\');
           processName = parts[parts.length - 1] || '';
         }
+        if (!processName) {
+          var errArr = Array.isArray(obj.error) ? obj.error : [];
+          if (errArr[0] && errArr[0].message) errorMsg = errArr[0].message;
+        }
       } catch(e) { errorJson = raw.slice(jsonStart, jsonStart + 600); }
     }
-    if (!errorMsg && fileMatch) {
-      var af = raw.slice(raw.indexOf(fileMatch[1]) + fileMatch[1].length)
-        .replace(/\(Line\s*\d+\)/, '').trim().replace(/^\d{3}\s+/, '').trim();
-      errorMsg = af.slice(0, 200);
+    // Sin JSON — extraer mensaje desde lo que viene después del paréntesis de línea
+    if (!errorMsg) {
+      var afterParens = raw.match(/\)\s+(.+)$/);
+      var msg = afterParens ? afterParens[1].trim() : '';
+      msg = msg.replace(/^\d{3}\s+/, '');
+      msg = msg.replace(/\b(\w[\w ]{3,25})\s+\1\b/gi, '$1').trim();
+      errorMsg = msg || raw.slice(0, 150);
     }
-    if (!errorMsg) errorMsg = raw.slice(0, 200);
-    if (httpMatch) errorMsg = errorMsg.replace(new RegExp('^' + httpMatch[1] + '\\s+'), '').trim();
+    // processName: desde JSON o inferido del path del archivo
+    if (!processName && fileMatch) {
+      var procFromPath = fileMatch[1].match(/Processes\/([^\/]+)\/([^\/\.]+)\.php/i);
+      processName = procFromPath ? procFromPath[2] : fileName.replace('.php','');
+    }
     var clientSet = new Set(flows.map(function(f) {
       var m = f.name.match(/\]\s*>\s*([^|>[\]]+?)\s*\|/);
       return m ? m[1].trim() : null;
@@ -1013,7 +1024,6 @@
       flowType = lp >= 0 ? flows[0].name.slice(lp+1).trim() : flows[0].name.split('>').pop().trim();
       flowType = flowType.replace(/^\[GPS\]\s*>\s*/i,'').trim();
     }
-    // Generar analisis contextual segun tipo de error
     var multi = clients.length > 1;
     var patronCtx = multi
       ? 'El mismo error se registra en ' + clients.length + ' entornos distintos (' + clients.slice(0,3).join(', ') + (clients.length > 3 ? ' y otros' : '') + '), todos con el mismo punto de fallo'
@@ -1021,43 +1031,37 @@
     var patronLoc = (fileName ? ' (' + fileName + (lineNum ? ':' + lineNum : '') + ')' : '') + '.';
     var analisis = '';
     if (httpCode === 504 || httpCode === 503 || httpCode === 502) {
-      analisis = patronCtx + patronLoc + ' ' +
-        'Podria estar relacionado con la disponibilidad o tiempo de respuesta del servicio externo al que apunta ' + (processName || 'el proceso') + '. ' +
-        'Al darse de forma simultanea en multiples tenants, no parece ser un problema aislado de configuracion.';
+      analisis = patronCtx + patronLoc + ' Podria estar relacionado con la disponibilidad o tiempo de respuesta del servicio externo al que apunta ' + (processName || 'el proceso') + '. Al darse de forma simultanea en multiples tenants, no parece ser un problema aislado de configuracion.';
     } else if (httpCode === 401 || httpCode === 403) {
-      analisis = patronCtx + patronLoc + ' ' +
-        'Podria estar vinculado con credenciales vencidas, un token expirado, o un cambio de permisos en el servicio externo que consume ' + (processName || 'el proceso') + '.';
+      analisis = patronCtx + patronLoc + ' Podria estar vinculado con credenciales vencidas, un token expirado, o un cambio de permisos en el servicio externo que consume ' + (processName || 'el proceso') + '.';
     } else if (errorMsg.match(/SQLSTATE|SQL|database|table/i)) {
-      analisis = patronCtx + patronLoc + ' ' +
-        'Podria estar relacionado con un cambio de esquema, una migracion pendiente, o conectividad con la base de datos en ' + (processName || 'el proceso') + '.';
+      analisis = patronCtx + patronLoc + ' Podria estar relacionado con un cambio de esquema, una migracion pendiente, o conectividad con la base de datos en ' + (processName || 'el proceso') + '.';
     } else if (errorMsg.match(/connection|connect|refused|timeout/i)) {
-      analisis = patronCtx + patronLoc + ' ' +
-        'Podria indicar una intermitencia o caida del servicio al que intenta conectarse ' + (processName || 'el proceso') + '.';
+      analisis = patronCtx + patronLoc + ' Podria indicar una intermitencia o caida del servicio al que intenta conectarse ' + (processName || 'el proceso') + '.';
     } else {
-      analisis = patronCtx + patronLoc + ' ' +
-        'El error ocurre de forma consistente en ' + (processName ? processName : fileName || 'el mismo punto') + '.';
+      analisis = patronCtx + patronLoc + ' El error ocurre de forma consistente en ' + (processName || fileName || 'el mismo punto') + '.';
     }
     var out = [];
-    // 1. DATOS TECNICOS — primero, concreto
+    // 1. DATOS TECNICOS
     out.push('=== DETALLE DEL ERROR ===');
-    out.push((httpCode ? 'HTTP ' + httpCode + ' ' : '') + errorMsg.split(' ').slice(0,8).join(' '));
-    if (fileName) out.push('Proceso: ' + (processName || '-') + '  |  Archivo: ' + fileName + (lineNum ? ':' + lineNum : ''));
+    out.push('Tipo: HTTP ' + (httpCode || '-') + ' ' + errorMsg.split(' ').slice(0,6).join(' '));
+    out.push('Proceso: ' + (processName || 'N/A') + '  |  Archivo: ' + (fileName || 'N/A') + (lineNum ? ':' + lineNum : ''));
     out.push('Flows afectados: ' + flows.length + '  |  Entornos: ' + clients.length);
-    // 2. ANALISIS PRELIMINAR — colaborativo, no prescriptivo
+    // 2. ANALISIS
     out.push('=== ANALISIS PRELIMINAR ===');
     out.push(analisis);
-    // 3. CONTEXTO — intro y lista de entornos
+    // 3. CONTEXTO
     out.push('=== CONTEXTO ===');
     out.push('Buenas Team, les compartimos el siguiente error detectado en el flow *' + flowType + '* en ' + clients.length + ' entorno' + (clients.length !== 1 ? 's' : '') + ':');
     clients.forEach(function(c) { out.push('- ' + c); });
-    // 4. FLOWS — compactos, link a pagina del flow (visualizable)
+    // 4. FLOWS
     out.push('=== FLOWS AFECTADOS (' + flows.length + ') ===');
     flows.forEach(function(f) {
       var cl = (function(){ var m=f.name.match(/\]\s*>\s*([^|>[\]]+?)\s*\|/); return m?m[1].trim():''; })();
       var tp = f.name.split('|').pop().trim().replace(/^\[GPS\]\s*>\s*/i,'').trim();
       out.push((cl||f.id) + ' | ' + tp + ' -> https://flow.vecfleet.io/flows/' + f.id);
     });
-    // 5. JSON tecnico al final como referencia
+    // 5. JSON tecnico
     if (errorJson) {
       out.push('=== LOG TECNICO ===');
       out.push(errorJson.slice(0, 800) + (errorJson.length > 800 ? '...' : ''));
