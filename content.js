@@ -415,37 +415,31 @@
       const batch = pending.slice(i, i + BATCH);
       await Promise.all(batch.map(async f => {
         try {
-          // Paso 1: obtener el executionId del HTML del flow
           const pageR = await fetch(`/flows/${f.id}`, { credentials: 'include' });
           const pageHtml = await pageR.text();
           const execM = pageHtml.match(/executions\/(\d+)\/download/);
           if (!execM) { f.errors = 'Sin detalle'; return; }
           f.executionId = execM[1];
-
-          // Paso 2: usar /details que devuelve el JSON completo sin truncar
-          const detR = await fetch(`/executions/${f.executionId}/details`, { credentials: 'include' });
-          if (!detR.ok) { f.errors = 'Sin detalle'; return; }
-          const det = await detR.json();
-
-          // Paso 3: extraer el error del pipeline
-          const procs = det.pipeline && det.pipeline.processes;
-          if (procs && procs.length > 0) {
-            const errProc = procs.find(p => p.errors && p.errors.trim()) || procs[0];
-            f.errors    = errProc.errors || 'Sin detalle';
-            f.errorsRaw = errProc.errors || '';
-            f.processName = errProc.name ? errProc.name.split('\\').pop() : '';
-          } else {
-            // Sin pipeline — usar el log de texto como fallback
-            const logR = await fetch(`/executions/${f.executionId}/download`, { credentials: 'include' });
-            if (logR.ok) {
-              const logText = await logR.text();
-              const ap = logText.match(/\)\s+(.+)$/m);
-              f.errors = ap ? ap[1].trim() : 'Sin detalle';
-              f.errorsRaw = f.errors;
-            } else {
-              f.errors = 'Sin detalle';
-            }
+          const logR = await fetch(`/executions/${f.executionId}/download`, { credentials: 'include' });
+          if (!logR.ok) { f.errors = 'Sin detalle'; return; }
+          const logText = await logR.text();
+          const sepIdx = logText.lastIndexOf('=====');
+          const afterSep = sepIdx >= 0 ? logText.slice(sepIdx + 5).trim() : logText;
+          const jsonStart = afterSep.indexOf('{');
+          let raw = '';
+          if (jsonStart >= 0) {
+            try {
+              const data = JSON.parse(afterSep.slice(jsonStart));
+              const errs = (data.processes || []).map(p => (p.errors || '').trim()).filter(Boolean);
+              raw = errs.join(' | ').slice(0, 300);
+            } catch(e2) {}
           }
+          if (!raw) {
+            const m = logText.match(/(?:Code:\s*\d+|Exception|ErrorException)[^\n]{5,200}/i);
+            raw = m ? m[0].trim() : '';
+          }
+          f.errors    = raw.slice(0, 300) || 'Sin detalle';
+          f.errorsRaw = raw;
         } catch(e) {
           f.errors = 'Sin detalle';
         } finally {
@@ -1066,16 +1060,18 @@
         errorJson = raw.slice(jsonStart);
       }
     }
-    // Sin JSON — extraer todo el mensaje después del paréntesis de línea
+    // Sin JSON — extraer mensaje limpio
     if (!errorMsg) {
       var ap = raw.match(/\)\s+(.+)$/);
       var msg = ap ? ap[1].trim() : '';
       msg = msg.replace(/^\d{3}\s+/, '').replace(/\b(\w[\w ]{3,25})\s+\1\b/gi, '$1').trim();
       errorMsg = msg || raw;
     }
+    // errorMsg: solo la primera línea (antes del stack trace)
+    var errorSummary = errorMsg.split('\n')[0].trim();
     if (!processName && fileMatch) {
       var pp2 = fileMatch[1].match(/Processes\/([^\/]+)\/([^\/\.]+)\.php/i);
-      processName = pp2 ? pp2[2] : fileName.replace('.php', '');
+      processName = pp2 ? pp2[2] : fileName.replace('.php','');
     }
     var clientSet = new Set(flows.map(function(f) {
       var m = f.name.match(/\]\s*>\s*([^|>[\]]+?)\s*\|/);
@@ -1118,13 +1114,13 @@
     var link=function(t,url){return txt(t,[{type:'link',attrs:{href:url}}]);};
     var codeBlock=function(t){return{type:'codeBlock',attrs:{language:'json'},content:[{type:'text',text:t}]};};
     var content = [];
-    // 1. Panel rojo — todo el detalle técnico
+    // 1. Panel rojo — solo resumen ejecutivo (sin stack trace)
     content.push(panel('error',[
       para(emoji('x'), txt(' '), bold('HTTP '+(httpCode||'?'))),
-      para(txt(errorMsg)),
+      para(txt(errorSummary)),
       para(bold('Proceso : '), txt(processName||'N/A')),
       para(bold('Archivo : '), txt(fileName||'N/A'), txt(lineNum ? '  |  Linea : '+lineNum : '')),
-      para(bold('Impacto : '), txt(flows.length+' flows en '+clients.length+' entorno'+(clients.length!==1?'s':'')+' — '+clients.join(', ')))
+      para(bold('Impacto : '), txt(flows.length+' flows en '+clients.length+' entorno'+(clients.length!==1?'s':'')+' \u2014 '+clients.join(', ')))
     ]));
     // 2. Panel azul — análisis
     content.push(panel('info',[
@@ -1149,13 +1145,11 @@
       flowRows.push(tr([td(txt(cl||f.id)), td(txt(tp)), td(link('Ver flow','https://flow.vecfleet.io/flows/'+f.id))]));
     });
     content.push(expand('Ver flows afectados ('+flows.length+')', [tbl(flowRows)]));
-    // 5. JSON Response colapsable — completo, sin truncar
-    var jsonContent = errorJson || raw;
-    // JSON como parrafos separados para word-wrap
-        var jsonLines = jsonContent.split('\n');
-        var jsonNodes = jsonLines.map(function(line){ return para(txt(line)); });
-        if (jsonNodes.length === 0) jsonNodes = [para(txt(jsonContent))];
-        content.push(expand('JSON Response', jsonNodes));
+    // 5. JSON Response colapsable — error completo con stack trace
+    var jsonContent = errorJson || errorMsg;
+    var jsonLines = jsonContent.split('\n');
+    var jsonParas = jsonLines.map(function(line){ return para(txt(line||'\u00a0')); });
+    content.push(expand('JSON Response', jsonParas.length > 0 ? jsonParas : [para(txt(jsonContent))]));
     content.push(rule());
     content.push(para(txt('Flow Monitor - '+new Date().toLocaleString('es-AR'))));
     return {version:1, type:'doc', content:content};
