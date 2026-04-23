@@ -386,9 +386,8 @@
 
     const container = document.getElementById('fm-list-content');
     const total = pending.length;
-    let done = 0;
+    const counter = { done: 0, displayed: 0 };
 
-    // Crear barra de loading una sola vez
     if (groupByError && container) {
       const div = document.createElement('div');
       div.id = 'fm-err-loading';
@@ -401,16 +400,14 @@
       container.appendChild(div);
     }
 
-    // Actualizar la barra — sin transición, siempre creciente
     const updateBar = () => {
       const el = document.getElementById('fm-err-loading');
       if (!el) return;
-      const pct = Math.round((done / total) * 100);
-      el.querySelector('.fm-err-txt').textContent = 'Cargando detalles... ' + done + '/' + total;
-      // Nunca retroceder: tomar el máximo entre el valor actual y el nuevo
-      const fill = el.querySelector('.fm-err-fill');
-      const current = parseFloat(fill.style.width) || 0;
-      fill.style.width = Math.max(current, pct) + '%';
+      if (counter.done <= counter.displayed) return;
+      counter.displayed = counter.done;
+      const pct = Math.round((counter.done / total) * 100);
+      el.querySelector('.fm-err-txt').textContent = 'Cargando detalles... ' + counter.done + '/' + total;
+      el.querySelector('.fm-err-fill').style.width = pct + '%';
     };
 
     const BATCH = 8;
@@ -447,7 +444,7 @@
           f.errors = 'Sin detalle';
         } finally {
           f.errorsLoaded = true;
-          done++;
+          counter.done++;
           if (groupByError) updateBar();
         }
       }));
