@@ -955,18 +955,11 @@
   function generateGroupDesc(errorKey, flows) {
     var raw = errorKey.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 
-    // Extraer campos técnicos
     var httpMatch = raw.match(/\b(4\d{2}|5\d{2})\b/);
     var codeMatch = raw.match(/Code:\s*(\d+)/i);
     var fileMatch = raw.match(/File:\s*(\S+\.php)/i);
     var lineMatch = raw.match(/\(Line\s*(\d+)\)/i);
-    // Mensaje: lo que viene después de la línea, limpiando repeticiones del status
-    var msgMatch  = raw.match(/\(Line\s*\d+\)\s+(.*)/i);
-    var cleanMsg  = msgMatch ? msgMatch[1].trim() : raw.slice(0, 150);
-    if (httpMatch) cleanMsg = cleanMsg.replace(new RegExp('^' + httpMatch[1] + '\\s+'), '');
-    cleanMsg = cleanMsg.replace(/\b(\w[\w\s]{2,20})\b\s+\b\1\b/gi, '$1').trim();
 
-    // Clientes reales
     var clients = new Set(flows.map(function(f) {
       var m = f.name.match(/\]\s*>\s*([^|>[\]]+?)\s*\|/);
       return m ? m[1].trim() : null;
@@ -975,20 +968,16 @@
     var out = [];
 
     out.push('ERROR EN ' + flows.length + ' FLOWS | ' + clients.size + ' CLIENTES');
-
-    // Resumen estructurado — cada campo en su línea
-    var errorLines = [];
-    if (httpMatch) errorLines.push('HTTP Status : ' + httpMatch[1]);
-    if (codeMatch) errorLines.push('Exit Code   : ' + codeMatch[1]);
-    if (fileMatch) errorLines.push('Archivo     : ' + fileMatch[1]);
-    if (lineMatch) errorLines.push('Linea       : ' + lineMatch[1]);
-    if (cleanMsg && !httpMatch && !fileMatch) errorLines.push('Detalle     : ' + cleanMsg.slice(0, 120));
-    out.push('RESUMEN DEL ERROR\n' + errorLines.join('\n'));
-
-    out.push('FLOWS AFECTADOS (' + flows.length + ')');
+    out.push('== RESUMEN DEL ERROR ==');
+    if (httpMatch) out.push('HTTP Status : ' + httpMatch[1]);
+    if (codeMatch) out.push('Exit Code   : ' + codeMatch[1]);
+    if (fileMatch) out.push('Archivo     : ' + fileMatch[1]);
+    if (lineMatch) out.push('Linea       : ' + lineMatch[1]);
+    out.push('== FLOWS AFECTADOS (' + flows.length + ') ==');
 
     flows.forEach(function(f) {
-      out.push('[' + f.id + '] ' + f.name + '\nhttps://flow.vecfleet.io/flows/' + f.id);
+      out.push('[' + f.id + '] ' + f.name);
+      out.push('https://flow.vecfleet.io/flows/' + f.id);
     });
 
     out.push('Generado por Flow Monitor - ' + new Date().toLocaleString('es-AR'));
