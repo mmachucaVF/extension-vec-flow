@@ -386,7 +386,7 @@
 
     const container = document.getElementById('fm-list-content');
     const total = pending.length;
-    const counter = { done: 0, displayed: 0 };
+    let done = 0;
 
     if (groupByError && container) {
       const div = document.createElement('div');
@@ -400,15 +400,15 @@
       container.appendChild(div);
     }
 
-    const updateBar = () => {
+    let lastShown = -1;
+    const timer = setInterval(() => {
+      if (done === lastShown) return;
+      lastShown = done;
       const el = document.getElementById('fm-err-loading');
-      if (!el) return;
-      if (counter.done <= counter.displayed) return;
-      counter.displayed = counter.done;
-      const pct = Math.round((counter.done / total) * 100);
-      el.querySelector('.fm-err-txt').textContent = 'Cargando detalles... ' + counter.done + '/' + total;
-      el.querySelector('.fm-err-fill').style.width = pct + '%';
-    };
+      if (!el) { clearInterval(timer); return; }
+      el.querySelector('.fm-err-txt').textContent = 'Cargando detalles... ' + done + '/' + total;
+      el.querySelector('.fm-err-fill').style.width = Math.round((done / total) * 100) + '%';
+    }, 300);
 
     const BATCH = 8;
     for (let i = 0; i < pending.length; i += BATCH) {
@@ -444,12 +444,12 @@
           f.errors = 'Sin detalle';
         } finally {
           f.errorsLoaded = true;
-          counter.done++;
-          if (groupByError) updateBar();
+          done++;
         }
       }));
     }
 
+    clearInterval(timer);
     const loadingEl = document.getElementById('fm-err-loading');
     if (loadingEl) loadingEl.remove();
     if (groupByError) renderList();
