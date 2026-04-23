@@ -937,7 +937,7 @@
 
     // Contar clientes con regex [CLIENTE] — mismo criterio que generateGroupDesc
     const clients = [...new Set(sel.map(f => {
-      const m = f.name.match(/\[([^\]]+)\]/);
+      const m = f.name.match(/\]\s*>\s*([^|>[\]]+?)\s*\|/);
       return m ? m[1] : null;
     }).filter(Boolean))];
 
