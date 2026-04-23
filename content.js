@@ -386,10 +386,13 @@
     let done = 0;
 
     const showProgress = () => {
+      const pct = Math.round((done / total) * 100);
       const existing = document.getElementById('fm-err-loading');
       if (existing) {
         existing.querySelector('.fm-err-txt').textContent = 'Cargando detalles... ' + done + '/' + total;
-        existing.querySelector('.fm-err-fill').style.width = Math.round((done/total)*100) + '%';
+        const fill = existing.querySelector('.fm-err-fill');
+        const current = parseFloat(fill.style.width) || 0;
+        if (pct > current) fill.style.width = pct + '%';
         return;
       }
       if (!container) return;
@@ -398,7 +401,7 @@
       div.style.cssText = 'padding:28px 20px;display:flex;flex-direction:column;align-items:center;gap:14px';
       div.innerHTML = '<span class="fm-err-txt" style="font-size:11px;color:#7c8494">Cargando detalles... 0/' + total + '</span>'
         + '<div style="width:80%;height:3px;background:rgba(255,255,255,.08);border-radius:2px">'
-        + '<div class="fm-err-fill" style="height:100%;width:0%;background:#6c63ff;border-radius:2px;transition:width .3s"></div>'
+        + '<div class="fm-err-fill" style="height:100%;width:0%;background:#6c63ff;border-radius:2px;transition:width .25s ease-out"></div>'
         + '</div>';
       container.innerHTML = '';
       container.appendChild(div);
@@ -406,42 +409,43 @@
 
     if (groupByError) showProgress();
 
-    const BATCH = 5;
+    const getFlowError = async (f) => {
+      try {
+        const pageR = await fetch(`/flows/${f.id}`, { credentials: 'include' });
+        const pageHtml = await pageR.text();
+        const execM = pageHtml.match(/executions\/(\.\d+)\/download/);
+        if (!execM) return 'Sin detalle';
+        f.executionId = execM[1];
+        const logR = await fetch(`/executions/${f.executionId}/download`, { credentials: 'include' });
+        if (!logR.ok) return 'Sin detalle';
+        const logText = await logR.text();
+        const sepIdx = logText.lastIndexOf('=====');
+        const afterSep = sepIdx >= 0 ? logText.slice(sepIdx + 5).trim() : logText;
+        const jsonStart = afterSep.indexOf('{');
+        let raw = '';
+        if (jsonStart >= 0) {
+          try {
+            const data = JSON.parse(afterSep.slice(jsonStart));
+            const errs = (data.processes || []).map(p => (p.errors || '').trim()).filter(Boolean);
+            raw = errs.join(' | ').slice(0, 300);
+          } catch(e2) {}
+        }
+        if (!raw) {
+          const m = logText.match(/(?:Code:\s*\d+|Exception|ErrorException)[^\n]{5,200}/i);
+          raw = m ? m[0].trim() : '';
+        }
+        return raw || 'Sin detalle';
+      } catch(e) { return 'Sin detalle'; }
+    };
+
+    const BATCH = 10;
     for (let i = 0; i < flows.length; i += BATCH) {
       const batch = flows.slice(i, i + BATCH);
-      await Promise.all(batch.map(async f => {
-        try {
-          // Obtener execId del HTML del flow
-          const pageR = await fetch(`/flows/${f.id}`, { credentials: 'include' });
-          const pageHtml = await pageR.text();
-          const execM = pageHtml.match(/executions\/(\d+)\/download/);
-          if (!execM) { f.errors = 'Sin detalle'; return; }
-          f.executionId = execM[1];
-          // Descargar el reporte de ejecución
-          const logR = await fetch(`/executions/${f.executionId}/download`, { credentials: 'include' });
-          if (!logR.ok) { f.errors = 'Sin detalle'; return; }
-          const logText = await logR.text();
-          // Parsear el JSON del reporte (está después del último separador ===)
-          const sepIdx = logText.lastIndexOf('=====');
-          const afterSep = sepIdx >= 0 ? logText.slice(sepIdx + 5).trim() : logText;
-          const jsonStart = afterSep.indexOf('{');
-          let raw = '';
-          if (jsonStart >= 0) {
-            try {
-              const data = JSON.parse(afterSep.slice(jsonStart));
-              const errs = (data.processes || []).map(p => (p.errors || '').trim()).filter(Boolean);
-              raw = errs.join(' | ').slice(0, 300);
-            } catch(e) {}
-          }
-          // Fallback: texto plano del reporte
-          if (!raw) {
-            const m = logText.match(/(?:Code:\s*\d+|Exception|ErrorException)[^\n]{5,200}/i);
-            raw = m ? m[0].trim() : '';
-          }
-          f.errors    = raw.slice(0, 300) || 'Sin detalle';
-          f.errorsRaw = raw;
-        } catch(e) { f.errors = 'Sin detalle'; }
-      }));
+      const errors = await Promise.all(batch.map(f => getFlowError(f)));
+      batch.forEach((f, idx) => {
+        f.errors    = errors[idx].slice(0, 300);
+        f.errorsRaw = errors[idx];
+      });
       done += batch.length;
       if (groupByError) showProgress();
     }
@@ -450,6 +454,7 @@
     if (loadingEl) loadingEl.remove();
     if (groupByError) renderList();
   }
+
 
   async function fetchStateTotals() {
     const getTotal = async (state) => {
