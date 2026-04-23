@@ -973,32 +973,57 @@
   function generateGroupDesc(errorKey, flows) {
     var raw = errorKey.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 
+    // Extraer campos técnicos del error
     var httpMatch = raw.match(/\b(4\d{2}|5\d{2})\b/);
-    var codeMatch = raw.match(/Code:\s*(\d+)/i);
     var fileMatch = raw.match(/File:\s*(\S+\.php)/i);
     var lineMatch = raw.match(/\(Line\s*(\d+)\)/i);
 
-    var clients = new Set(flows.map(function(f) {
+    // Extraer mensaje limpio desde el JSON embebido si existe
+    var jsonStart = raw.indexOf('{');
+    var errorMsg = '';
+    if (jsonStart >= 0) {
+      try {
+        var obj = JSON.parse(raw.slice(jsonStart));
+        var d = Array.isArray(obj.detalle) ? obj.detalle[0] : null;
+        errorMsg = d
+          ? (typeof d === 'string' ? d : (d.message || ''))
+          : (obj.message || '');
+      } catch(e) {}
+    }
+    if (!errorMsg && fileMatch) {
+      // Sin JSON — usar lo que hay después del archivo
+      var afterFile = raw.slice(raw.indexOf(fileMatch[1]) + fileMatch[1].length).replace(/\(Line\s*\d+\)/, '').trim();
+      errorMsg = afterFile.slice(0, 150);
+    }
+    if (!errorMsg) errorMsg = raw.slice(0, 150);
+
+    // Clientes
+    var clientSet = new Set(flows.map(function(f) {
       var m = f.name.match(/\]\s*>\s*([^|>[\]]+?)\s*\|/);
       return m ? m[1].trim() : null;
     }).filter(Boolean));
+    var clients = [...clientSet];
 
     var out = [];
 
-    out.push('ERROR EN ' + flows.length + ' FLOWS | ' + clients.size + ' CLIENTES');
-    out.push('== RESUMEN DEL ERROR ==');
-    if (httpMatch) out.push('HTTP Status : ' + httpMatch[1]);
-    if (codeMatch) out.push('Exit Code   : ' + codeMatch[1]);
-    if (fileMatch) out.push('Archivo     : ' + fileMatch[1]);
-    if (lineMatch) out.push('Linea       : ' + lineMatch[1]);
-    out.push('== FLOWS AFECTADOS (' + flows.length + ') ==');
+    // 1. ERROR — protagonista
+    out.push('== ERROR ==');
+    out.push(errorMsg || raw.slice(0, 200));
+    if (httpMatch) out.push('HTTP ' + httpMatch[1] +
+      (fileMatch ? ' | ' + fileMatch[1].split('/').pop() + (lineMatch ? ':' + lineMatch[1] : '') : ''));
 
+    // 2. IMPACTO — compacto
+    out.push('== IMPACTO ==');
+    out.push(flows.length + ' flows afectados en ' + clients.length + ' cliente' + (clients.length !== 1 ? 's' : '') +
+      ': ' + clients.join(', '));
+
+    // 3. FLOWS — ID + nombre + link en una línea cada uno
+    out.push('== FLOWS (' + flows.length + ') ==');
     flows.forEach(function(f) {
-      out.push('[' + f.id + '] ' + f.name);
-      out.push('https://flow.vecfleet.io/flows/' + f.id);
+      out.push('[' + f.id + '] ' + f.name + ' -> https://flow.vecfleet.io/flows/' + f.id);
     });
 
-    out.push('Generado por Flow Monitor - ' + new Date().toLocaleString('es-AR'));
+    out.push('Flow Monitor - ' + new Date().toLocaleString('es-AR'));
 
     return out.join('\n\n');
   }
