@@ -1145,10 +1145,11 @@
       flowRows.push(tr([td(txt(cl||f.id)), td(txt(tp)), td(link('Ver flow','https://flow.vecfleet.io/flows/'+f.id))]));
     });
     content.push(expand('Ver flows afectados ('+flows.length+')', [tbl(flowRows)]));
-    // FIX 3: JSON en codeBlock dentro de expand llamado 'JSON Response'
-    if (errorJson) {
-      content.push(expand('JSON Response', [codeBlock(errorJson.slice(0,1500)+(errorJson.length>1500?'\n...':''))]));
-    }
+    // JSON Response — siempre visible, usa JSON si existe sino el error raw
+    var jsonContent = errorJson
+      ? errorJson.slice(0,1500)+(errorJson.length>1500?'\n...':'')
+      : raw.slice(0,800)+(raw.length>800?'\n...':'');
+    content.push(expand('JSON Response', [codeBlock(jsonContent)]));
     content.push(rule());
     content.push(para(txt('Flow Monitor - '+new Date().toLocaleString('es-AR'))));
     return {version:1, type:'doc', content:content};
