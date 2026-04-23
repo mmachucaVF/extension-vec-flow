@@ -973,65 +973,97 @@
   function generateGroupDesc(errorKey, flows) {
     var raw = errorKey.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 
+    // Extraer campos técnicos
     var httpMatch = raw.match(/\b(4\d{2}|5\d{2})\b/);
     var fileMatch = raw.match(/File:\s*(\S+\.php)/i);
     var lineMatch = raw.match(/\(Line\s*(\d+)\)/i);
 
+    // Extraer mensaje limpio del JSON embebido
     var jsonStart = raw.indexOf('{');
     var errorMsg = '';
+    var errorJson = '';
+    var processName = '';
     if (jsonStart >= 0) {
       try {
         var obj = JSON.parse(raw.slice(jsonStart));
+        errorJson = JSON.stringify(obj, null, 2);
         var d = Array.isArray(obj.detalle) ? obj.detalle[0] : null;
-        errorMsg = d
-          ? (typeof d === 'string' ? d : (d.message || ''))
-          : (obj.message || '');
-      } catch(e) {}
+        errorMsg = d ? (typeof d === 'string' ? d : (d.message || '')) : (obj.message || '');
+        // Extraer nombre del proceso desde processes[0].name
+        var procs = obj.pipeline && obj.pipeline.processes;
+        if (procs && procs[0] && procs[0].name) {
+          var parts = procs[0].name.split('\\\\');
+          processName = parts[parts.length - 1] || '';
+        }
+      } catch(e) {
+        errorJson = raw.slice(jsonStart, jsonStart + 600);
+      }
     }
     if (!errorMsg && fileMatch) {
-      var afterFile = raw.slice(raw.indexOf(fileMatch[1]) + fileMatch[1].length)
-        .replace(/\(Line\s*\d+\)/, '').trim();
-      errorMsg = afterFile.slice(0, 150);
+      var af = raw.slice(raw.indexOf(fileMatch[1]) + fileMatch[1].length).replace(/\(Line\s*\d+\)/, '').trim();
+      errorMsg = af.slice(0, 150);
     }
     if (!errorMsg) errorMsg = raw.slice(0, 150);
 
+    // Clientes únicos
     var clientSet = new Set(flows.map(function(f) {
       var m = f.name.match(/\]\s*>\s*([^|>[\]]+?)\s*\|/);
       return m ? m[1].trim() : null;
     }).filter(Boolean));
     var clients = [...clientSet];
 
-    // Tomar un execution ID de ejemplo para el link del log
-    var sampleFlow = flows.find(function(f) { return f.executionId; });
-    var logUrl = sampleFlow
-      ? 'https://flow.vecfleet.io/executions/' + sampleFlow.executionId + '/download'
-      : '';
+    // Nombre del tipo de flow (parte final del nombre)
+    var flowTypeName = '';
+    if (flows.length > 0) {
+      var lastPipe = flows[0].name.lastIndexOf('|');
+      flowTypeName = lastPipe >= 0 ? flows[0].name.slice(lastPipe+1).trim() : flows[0].name.split('>').pop().trim();
+      flowTypeName = flowTypeName.replace(/^\[GPS\]\s*>\s*/i, '').trim();
+    }
+
+    // Descripción del error para el texto principal
+    var httpStr = httpMatch ? httpMatch[1] + ' ' + errorMsg.split(' ').slice(0,4).join(' ') : errorMsg.slice(0,80);
+    var procStr = processName ? ' en el proceso *' + processName + '*' : '';
 
     var out = [];
 
-    // 1. ERROR
-    out.push('== ERROR ==');
-    out.push(errorMsg || raw.slice(0, 200));
-    var techLine = '';
-    if (httpMatch) techLine += 'HTTP ' + httpMatch[1];
-    if (fileMatch) techLine += (techLine ? ' | ' : '') + fileMatch[1].split('/').pop() + (lineMatch ? ':' + lineMatch[1] : '');
-    if (techLine)  out.push(techLine);
-    if (logUrl)    out.push('Log de ejemplo: ' + logUrl);
+    // 1. Introducción conversacional
+    out.push('Buenas Team,');
+    out.push(
+      'Estamos viendo fallas en el flow *' + flowTypeName + '* en ' +
+      clients.length + ' entorno' + (clients.length !== 1 ? 's' : '') +
+      ' con el mismo patron de error:'
+    );
 
-    // 2. IMPACTO
-    out.push('== IMPACTO ==');
-    out.push(flows.length + ' flows en ' + clients.length + ' cliente' +
-      (clients.length !== 1 ? 's' : '') + ': ' + clients.join(', '));
+    // 2. Lista de clientes
+    out.push(clients.map(function(c) { return '- ' + c; }).join('\n'));
 
-    // 3. FLOWS con link al log individual
-    out.push('== FLOWS (' + flows.length + ') ==');
-    flows.forEach(function(f) {
-      var flowUrl = 'https://flow.vecfleet.io/flows/' + f.id;
-      var logLink = f.executionId
-        ? ' | log: https://flow.vecfleet.io/executions/' + f.executionId + '/download'
-        : '';
-      out.push('[' + f.id + '] ' + f.name + ' -> ' + flowUrl + logLink);
-    });
+    // 3. Descripción del error
+    out.push(
+      'En todos los casos el error es un *' + httpStr + '*' + procStr + '.'
+    );
+
+    // 4. Hipótesis y pedido
+    out.push(
+      'Por lo que relevamos, pareceria ser algo compartido ya que se repite ' +
+      'el mismo comportamiento en distintos tenants. ' +
+      'Solicitamos apoyo con la revision de los mismos.'
+    );
+
+    // 5. Links por flow con nombre legible
+    out.push(flows.map(function(f) {
+      var cl = (function() { var m = f.name.match(/\]\s*>\s*([^|>[\]]+?)\s*\|/); return m?m[1].trim():''; })();
+      var tp = f.name.split('|').pop().trim().replace(/^\[GPS\]\s*>\s*/i,'').trim();
+      var label = (cl || f.id) + ' | ' + tp;
+      var fUrl  = 'https://flow.vecfleet.io/flows/' + f.id;
+      var lUrl  = f.executionId ? '\n  log: https://flow.vecfleet.io/executions/' + f.executionId + '/download' : '';
+      return label + '\n  flow: ' + fUrl + lUrl;
+    }).join('\n'));
+
+    // 6. JSON técnico al final como anexo
+    if (errorJson) {
+      out.push('Detalle tecnico (ultima ejecucion):');
+      out.push(errorJson.slice(0, 800) + (errorJson.length > 800 ? '...' : ''));
+    }
 
     out.push('Flow Monitor - ' + new Date().toLocaleString('es-AR'));
 
