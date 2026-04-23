@@ -1145,7 +1145,11 @@
     content.push(expand('Ver flows afectados ('+flows.length+')', [tbl(flowRows)]));
     // 5. JSON Response colapsable — completo, sin truncar
     var jsonContent = errorJson || raw;
-    content.push(expand('JSON Response', [codeBlock(jsonContent)]));
+    // JSON como parrafos separados para word-wrap
+        var jsonLines = jsonContent.split('\n');
+        var jsonNodes = jsonLines.map(function(line){ return para(txt(line)); });
+        if (jsonNodes.length === 0) jsonNodes = [para(txt(jsonContent))];
+        content.push(expand('JSON Response', jsonNodes));
     content.push(rule());
     content.push(para(txt('Flow Monitor - '+new Date().toLocaleString('es-AR'))));
     return {version:1, type:'doc', content:content};
