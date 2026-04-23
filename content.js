@@ -835,89 +835,27 @@
 
   function clearDetail(){const p=document.getElementById('fm-detail');p.innerHTML=`<div class="fm-no-sel"><div class="fm-no-sel-icon">◷</div><div class="fm-no-sel-text">Seleccióná un flow<br>para ver el detalle</div></div>`;}
   function selectAllVisible(){const flows=getFiltered(),allSel=flows.every(f=>selectedIds.has(f.id));flows.forEach(f=>allSel?selectedIds.delete(f.id):selectedIds.add(f.id));renderList();}
-  function selectGroup(k){const flows=allFlows.filter(f=>(f.errors||'Sin detalle'===k)),allSel=flows.every(f=>selectedIds.has(f.id));flows.forEach(f=>allSel?selectedIds.delete(f.id):selectedIds.add(f.id));renderList();}
-  function ticketGroup(k){allFlows.filter(f=>(f.errors||'Sin detalle')===k).forEach(f=>selectedIds.add(f.id));renderList();openJiraModal();}
-  function clearSelection(){selectedIds.clear();renderList();}
-  function updateSelBar(){const bar=document.getElementById('fm-sel-bar');if(!bar)return;bar.classList.toggle('fm-visible',selectedIds.size>0);const c=document.getElementById('fm-sel-count');if(c)c.textContent=selectedIds.size;}
-
-  async function showDetail(flow) {
-    const panel=document.getElementById('fm-detail');
-    const pc=flow.state==='error'?'fm-pill-error':flow.state==='timeout'?'fm-pill-timeout':'fm-pill-ok';
-    const hdrCls=flow.state==='error'?'fm-hdr-error':flow.state==='timeout'?'fm-hdr-timeout':'fm-hdr-ok';
-    const stIcon=flow.state==='error'?'❌':flow.state==='timeout'?'⏳':'✅';
-    panel.innerHTML=`<div class="fm-detail-hdr ${hdrCls}"><div style="display:flex;align-items:center;gap:6px;margin-bottom:4px"><span style="font-size:14px">${stIcon}</span><span class="fm-pill ${pc}">${flow.state.toUpperCase()}</span></div><div class="fm-detail-title">${esc(flow.name)}</div><div class="fm-detail-sub">#${flow.id} · cargando...</div></div><div style="padding:20px;color:#555b66;font-size:11px;text-align:center">◎ Cargando...</div>`;
-    await loadFlowDetail(flow);
-    const jsonStr=flow.jsonData?JSON.stringify(flow.jsonData,null,2):'pipeline: null';
-    const errorBox=flow.state==='timeout'?'fm-timeout-box':'fm-error-box';
-    const hasErr=!!(flow.errors||flow.state==='timeout');
-    panel.innerHTML=`
-      <div class="fm-detail-hdr ${hdrCls}">
-        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px"><span style="font-size:14px">${stIcon}</span><span class="fm-pill ${pc}">${flow.state.toUpperCase()}</span></div>
-        <div class="fm-detail-title">${esc(flow.name)}</div>
-        <div class="fm-detail-sub">#${flow.id} · ${esc(flow.type||'')} · ${esc(flow.freq||'')}</div>
-      </div>
-      <div class="fm-detail-sec">
-        <div class="fm-sec-label">📋 Info</div>
-        <div class="fm-dr"><span class="fm-dk">Último run</span><span class="fm-dv">${esc(flow.lastRun||'—')}</span></div>
-        ${flow.executionId?`<div class="fm-dr"><span class="fm-dk">Execution ID</span><span class="fm-dv">#${flow.executionId}</span></div>`:''}
-      </div>
-      ${hasErr?`<div class="fm-detail-sec"><div class="fm-sec-label">${flow.state==='timeout'?'⏳ Timeout':'🔴 Error'}</div><div class="${errorBox}">${esc(flow.errors||'Timeout — sin mensaje')}</div>${flow.processName?`<div style="font-size:9px;color:#555b66;margin-top:4px;font-family:monospace">⚙️ ${esc(flow.processName)}</div>`:''  }${flow.errorsRaw&&flow.errorsRaw!==flow.errors?`<details style="margin-top:7px"><summary style="font-size:9px;color:#555b66;cursor:pointer;list-style:none;padding:3px 0">▶ stack trace</summary><div class="fm-json-box" style="margin-top:5px;color:#555b66">${esc(flow.errorsRaw)}</div></details>`:''}</div>`:''}  
-      ${flow.state==='error'&&flow.errors?`<div class="fm-detail-sec" id="fm-diag-${flow.id}"><div class="fm-sec-label" style="display:flex;justify-content:space-between;align-items:center"><span>🤖 Pre-diagnóstico IA</span><span id="fm-diag-quota" style="font-size:9px;color:#434a57"></span></div><div id="fm-diag-body-${flow.id}">${typeof flow.diagnosis==='string'&&flow.diagnosis.length>0?`<div id="fm-diag-text-${flow.id}" style="font-size:11px;color:#c8d0e0;line-height:1.7;background:rgba(108,99,255,.06);border:1px solid rgba(108,99,255,.18);border-radius:7px;padding:12px"></div>`:`<button style="width:100%;padding:8px;background:rgba(108,99,255,.1);border:1px solid rgba(108,99,255,.3);border-radius:7px;color:#8c85ff;font-size:12px;cursor:pointer" data-action="run-diagnosis" data-flow-id="${flow.id}">🤖 Generar diagnóstico</button>`}</div></div>`:''}
-      <div class="fm-detail-sec">
-        <div class="fm-sec-label" style="display:flex;justify-content:space-between;align-items:center"><span>🔎 JSON response</span><div style="display:flex;gap:8px;align-items:center"><button id="fm-json-toggle" style="font-size:8px;padding:2px 7px;border-radius:7px;border:1px solid rgba(255,255,255,.11);background:transparent;color:#7c8494;cursor:pointer" onclick="const b=document.getElementById('fm-json-box-main');const t=document.getElementById('fm-json-toggle');b.classList.toggle('fm-expanded');t.textContent=b.classList.contains('fm-expanded')?'⬆ colapsar':'⬇ expandir'">⬇ expandir</button><a href="${BASE}/flows/${flow.id}" target="_blank" style="color:#6c63ff;font-size:9px;text-decoration:none">🔗 vecfleet ↗</a></div></div>
-        <div class="fm-json-box" id="fm-json-box-main">${esc(jsonStr)}</div>
-      </div>
-      <div class="fm-detail-sec" style="display:flex;flex-direction:column;gap:7px">
-        <button class="fm-btn fm-danger" style="width:100%;justify-content:center" data-action="add-jira" data-flow-id="${flow.id}">🎫 Crear ticket Jira</button>
-        <a href="${BASE}/flows/${flow.id}" target="_blank" class="fm-btn" style="width:100%;justify-content:center;text-decoration:none">🔗 Ver en VecFleet</a>
-      </div>`;
-    if(flow.state==='error'&&typeof flow.diagnosis==='string'&&flow.diagnosis.length>0){const el=document.getElementById(`fm-diag-text-${flow.id}`);if(el){el.innerHTML=flow.diagnosis.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/^(\d+\.\s)/gm,'<br><span style="color:#6c63ff;font-weight:600">$1</span>').trim();}}
-    if(flow.state==='error')updateDiagQuota();
+  function selectGroup(k) {
+    const groupFlows = allFlows.filter(f => (f.errors || 'Sin detalle') === k);
+    const allSelected = groupFlows.every(f => selectedIds.has(f.id));
+    if (allSelected) {
+      // Deseleccionar todo el grupo
+      groupFlows.forEach(f => selectedIds.delete(f.id));
+    } else {
+      // Seleccionar todo el grupo
+      groupFlows.forEach(f => selectedIds.add(f.id));
+    }
+    renderList();
   }
 
-  const DAILY_LIMIT=20;
-  function getDiagUsage(){const today=new Date().toISOString().slice(0,10);try{const d=JSON.parse(localStorage.getItem('fm_diag_usage'));if(d?.date===today)return d.count;}catch(e){}return 0;}
-  function incDiagUsage(){const today=new Date().toISOString().slice(0,10);const c=getDiagUsage()+1;localStorage.setItem('fm_diag_usage',JSON.stringify({date:today,count:c}));return c;}
-  function updateDiagQuota(){const r=DAILY_LIMIT-getDiagUsage();const el=document.getElementById('fm-diag-quota');if(el){el.textContent=`${r}/${DAILY_LIMIT} hoy`;el.style.color=r<=5?'#f5923e':'#434a57';}}
-
-  function runDiagnosis(flowId) {
-    const flow=allFlows.find(f=>f.id===flowId);if(!flow)return;
-    if(getDiagUsage()>=DAILY_LIMIT){const el=document.getElementById(`fm-diag-body-${flowId}`);if(el)el.innerHTML=`<div style="font-size:10px;color:#f5923e;padding:6px 0">⚠️ Límite diario alcanzado.</div>`;return;}
-    if(typeof flow.diagnosis==='string'&&flow.diagnosis.length>0){const el=document.getElementById(`fm-diag-body-${flowId}`);if(el){el.innerHTML=`<div id="fm-diag-text-${flowId}" style="font-size:11px;color:#c8d0e0;line-height:1.7;background:rgba(108,99,255,.06);border:1px solid rgba(108,99,255,.18);border-radius:7px;padding:12px"></div>`;const t=document.getElementById(`fm-diag-text-${flowId}`);if(t)t.innerHTML=flow.diagnosis.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').trim();}return;}
-    const bodyEl=document.getElementById(`fm-diag-body-${flowId}`);if(bodyEl)bodyEl.innerHTML=`<div style="font-size:11px;color:#434a57;padding:4px 0">◌ Analizando con IA...</div>`;
-    generateDiagnosis(flow).then(diag=>{
-      flow.diagnosis=diag||false;if(diag)incDiagUsage();updateDiagQuota();
-      const el=document.getElementById(`fm-diag-body-${flowId}`);
-      if(el){if(diag){el.innerHTML=`<div style="font-size:11px;color:#c8d0e0;line-height:1.7;background:rgba(108,99,255,.06);border:1px solid rgba(108,99,255,.18);border-radius:7px;padding:12px">${diag.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/^(\d+\.\s)/gm,'<br><span style="color:#6c63ff;font-weight:600">$1</span>').trim()}</div>`;}else el.innerHTML=`<div style="font-size:10px;color:#434a57;padding:4px 0">No se pudo generar. Verificá la API key.</div>`;}
-    });
+  function ticketGroup(k) {
+    const groupFlows = allFlows.filter(f => (f.errors || 'Sin detalle') === k);
+    // Seleccionar los flows del grupo
+    groupFlows.forEach(f => selectedIds.add(f.id));
+    renderList();
+    // Abrir modal con el error y los flows del grupo
+    openJiraModal(k, groupFlows);
   }
-
-  async function generateDiagnosis(flow) {
-    const errorInfo=flow.errorsRaw||flow.errors||'';if(!errorInfo)return null;
-    const prompt=`Sos un experto en sistemas backend Laravel/PHP. Analizá este error y respondé en español con 2 secciones:\n1. **Causa probable** — qué salió mal (1-2 oraciones)\n2. **Impacto** — qué funcionalidad falla\n\nFlow: "${flow.name}"\nError: ${errorInfo.slice(0,800)}\nMáximo 80 palabras total.`;
-    return new Promise(resolve=>{
-      const t=setTimeout(()=>resolve(null),20000);
-      try{chrome.runtime.sendMessage({action:'anthropic',prompt},(resp)=>{clearTimeout(t);if(chrome.runtime.lastError){resolve(null);return;}resolve(resp?.ok?resp.text:null);})}
-      catch(e){clearTimeout(t);resolve(null);}
-    });
-  }
-
-  function getJiraConfig(){try{return JSON.parse(localStorage.getItem('fm_jira_cfg')||'null');}catch(e){return null;}}
-
-  async function jiraFetch(path,options={}) {
-    const cfg=getJiraConfig();if(!cfg)throw new Error('Jira no configurado');
-    const url=`${cfg.url.replace(/\/$/,'')}/rest/api/3${path}`;
-    return new Promise((resolve,reject)=>{
-      const t=setTimeout(()=>reject(new Error('Timeout')),15000);
-      chrome.runtime.sendMessage({action:'jira',url,method:options.method||'GET',body:options.body?JSON.parse(options.body):undefined,email:cfg.email,token:cfg.token},(resp)=>{
-        clearTimeout(t);
-        if(chrome.runtime.lastError){reject(new Error(chrome.runtime.lastError.message));return;}
-        if(!resp?.ok)reject(new Error(resp?.error||'Error desconocido'));else resolve(resp.data);
-      });
-    });
-  }
-
-  function addAndJira(id){selectedIds.add(id);renderList();openJiraModal();}
 
   function openJiraModal(errorKey, groupFlows) {
     if (!errorKey && !selectedIds.size) return;
