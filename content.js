@@ -381,7 +381,6 @@
 
   async function loadErrorDetailsInBackground(flows) {
     if (!flows.length) return;
-    // Filtrar los que ya tienen errores cargados (cache)
     const pending = flows.filter(f => !f.errorsLoaded);
     if (!pending.length) { if (groupByError) renderList(); return; }
 
@@ -390,7 +389,7 @@
     let done = 0;
 
     const showProgress = () => {
-      const pct = Math.round((done/total)*100);
+      const pct = Math.round((done / total) * 100);
       const existing = document.getElementById('fm-err-loading');
       if (existing) {
         existing.querySelector('.fm-err-txt').textContent = 'Cargando detalles... ' + done + '/' + total;
@@ -411,7 +410,6 @@
 
     if (groupByError) showProgress();
 
-    // Procesar en batches de 8 — cada flow incrementa done individualmente
     const BATCH = 8;
     for (let i = 0; i < pending.length; i += BATCH) {
       const batch = pending.slice(i, i + BATCH);
@@ -420,12 +418,11 @@
           const pageR = await fetch(`/flows/${f.id}`, { credentials: 'include' });
           const pageHtml = await pageR.text();
           const execM = pageHtml.match(/executions\/(\d+)\/download/);
-          if (!execM) { f.errors = 'Sin detalle'; f.errorsLoaded = true; done++; if (groupByError) showProgress(); return; }
+          if (!execM) { f.errors = 'Sin detalle'; return; }
           f.executionId = execM[1];
           const logR = await fetch(`/executions/${f.executionId}/download`, { credentials: 'include' });
-          if (!logR.ok) { f.errors = 'Sin detalle'; f.errorsLoaded = true; done++; if (groupByError) showProgress(); return; }
+          if (!logR.ok) { f.errors = 'Sin detalle'; return; }
           const logText = await logR.text();
-          // Parsear el JSON del reporte (después del último separador ===)
           const sepIdx = logText.lastIndexOf('=====');
           const afterSep = sepIdx >= 0 ? logText.slice(sepIdx + 5).trim() : logText;
           const jsonStart = afterSep.indexOf('{');
@@ -435,18 +432,22 @@
               const data = JSON.parse(afterSep.slice(jsonStart));
               const errs = (data.processes || []).map(p => (p.errors || '').trim()).filter(Boolean);
               raw = errs.join(' | ').slice(0, 300);
-            } catch(e) {}
+            } catch(e2) {}
           }
           if (!raw) {
             const m = logText.match(/(?:Code:\s*\d+|Exception|ErrorException)[^\n]{5,200}/i);
             raw = m ? m[0].trim() : '';
           }
-          f.errors      = raw.slice(0, 300) || 'Sin detalle';
-          f.errorsRaw   = raw;
-          f.errorsLoaded = true; // marcar como cargado para cache
-        } catch(e) { f.errors = 'Sin detalle'; f.errorsLoaded = true; }
-        done++;
-        if (groupByError) showProgress();
+          f.errors    = raw.slice(0, 300) || 'Sin detalle';
+          f.errorsRaw = raw;
+        } catch(e) {
+          f.errors = 'Sin detalle';
+        } finally {
+          // Siempre incrementar — tanto en éxito como en error
+          f.errorsLoaded = true;
+          done++;
+          if (groupByError) showProgress();
+        }
       }));
     }
 
