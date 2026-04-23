@@ -1056,27 +1056,26 @@
           var pp = procs[0].name.split('\\\\');
           processName = pp[pp.length-1] || '';
         }
-      } catch(e) { errorJson = raw.slice(jsonStart); }
+      } catch(e) {
+        errorJson = raw.slice(jsonStart);
+      }
     }
+    // Sin JSON — extraer todo el mensaje después del paréntesis de línea
     if (!errorMsg) {
       var ap = raw.match(/\)\s+(.+)$/);
       var msg = ap ? ap[1].trim() : '';
-      // Quitar status HTTP al inicio y frases duplicadas
       msg = msg.replace(/^\d{3}\s+/, '').replace(/\b(\w[\w ]{3,25})\s+\1\b/gi, '$1').trim();
       errorMsg = msg || raw;
     }
     if (!processName && fileMatch) {
       var pp2 = fileMatch[1].match(/Processes\/([^\/]+)\/([^\/\.]+)\.php/i);
-      processName = pp2 ? pp2[2] : fileName.replace('.php','');
+      processName = pp2 ? pp2[2] : fileName.replace('.php', '');
     }
-    // Clientes únicos
     var clientSet = new Set(flows.map(function(f) {
       var m = f.name.match(/\]\s*>\s*([^|>[\]]+?)\s*\|/);
       return m ? m[1].trim() : null;
     }).filter(Boolean));
     var clients = [...clientSet];
-    // FIX 1: Nombre del error/tipo de flow — NO usar el nombre del primer flow
-    // sino el tipo de proceso o el nombre del archivo
     var errorType = processName || (fileName ? fileName.replace('.php','') : 'los flows afectados');
     // Análisis contextual
     var multi = clients.length > 1;
@@ -1109,26 +1108,24 @@
     var tbl=function(rows){return{type:'table',attrs:{isNumberColumnEnabled:false,layout:'default'},content:rows};};
     var tr=function(cells){return{type:'tableRow',content:cells};};
     var th=function(t){return{type:'tableHeader',attrs:{},content:[para(bold(t))]};};
-    var td=function(){return{type:'tableCell',attrs:{},content:[para.apply(null,[].slice.call(arguments))]}; };
+    var td=function(){return{type:'tableCell',attrs:{},content:[para.apply(null,[].slice.call(arguments))]};};
     var link=function(t,url){return txt(t,[{type:'link',attrs:{href:url}}]);};
     var codeBlock=function(t){return{type:'codeBlock',attrs:{language:'json'},content:[{type:'text',text:t}]};};
     var content = [];
-    // 1. Panel de error — rojo
-    // FIX 2: errorMsg sin duplicados — ya limpiado arriba
-    var errLabel = (httpCode ? 'HTTP '+httpCode+' ' : '') + errorMsg;
+    // 1. Panel rojo — todo el detalle técnico
     content.push(panel('error',[
       para(emoji('x'), txt(' '), bold('HTTP '+(httpCode||'?'))),
-      para(txt(errorMsg||'Error desconocido')),
+      para(txt(errorMsg)),
       para(bold('Proceso : '), txt(processName||'N/A')),
       para(bold('Archivo : '), txt(fileName||'N/A'), txt(lineNum ? '  |  Linea : '+lineNum : '')),
       para(bold('Impacto : '), txt(flows.length+' flows en '+clients.length+' entorno'+(clients.length!==1?'s':'')+' — '+clients.join(', ')))
     ]));
-    // 2. Panel de análisis — azul
+    // 2. Panel azul — análisis
     content.push(panel('info',[
       para(emoji('mag'), txt(' '), bold('Analisis preliminar')),
       para(txt(analisis))
     ]));
-    // 3. Contexto — FIX 1: usar errorType en vez del nombre del primer flow
+    // 3. Contexto
     content.push(rule());
     content.push(h3(emoji('wave'), txt(' Contexto')));
     content.push(para(
@@ -1137,7 +1134,7 @@
       txt(' en ' + clients.length + ' entorno' + (clients.length !== 1 ? 's' : '') + ':')
     ));
     content.push(blist(clients.map(function(c){ return txt(c); })));
-    // 4. Flows en expand colapsable
+    // 4. Flows colapsables
     content.push(rule());
     var flowRows = [tr([th('Entorno'), th('Flow'), th('Link')])];
     flows.forEach(function(f) {
@@ -1146,7 +1143,7 @@
       flowRows.push(tr([td(txt(cl||f.id)), td(txt(tp)), td(link('Ver flow','https://flow.vecfleet.io/flows/'+f.id))]));
     });
     content.push(expand('Ver flows afectados ('+flows.length+')', [tbl(flowRows)]));
-    // JSON Response — siempre visible, usa JSON si existe sino el error raw
+    // 5. JSON Response colapsable — completo, sin truncar
     var jsonContent = errorJson || raw;
     content.push(expand('JSON Response', [codeBlock(jsonContent)]));
     content.push(rule());
