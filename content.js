@@ -951,38 +951,36 @@
       .replace(/<[^>]+>/g, ' ')
       .replace(/\s+/g, ' ')
       .trim()
-      .slice(0, 400);
+      .slice(0, 300);
 
-    const lines = [];
+    const parts = [];
+    parts.push('h3. Error detectado en ' + flows.length + ' flow' + (flows.length !== 1 ? 's' : ''));
+    parts.push('');
+    parts.push('{panel:title=Error|borderStyle=solid|borderColor=#FF5630|titleBGColor=#FFEBE6}');
+    parts.push(cleanError);
+    parts.push('{panel}');
+    parts.push('');
 
-    lines.push('h3. ⚠️ Error detectado en ' + flows.length + ' flow' + (flows.length !== 1 ? 's' : ''));
-    lines.push('');
-    lines.push('{panel:title=Error|borderStyle=solid|borderColor=#FF5630|titleBGColor=#FFEBE6}');
-    lines.push(cleanError);
-    lines.push('{panel}');
-    lines.push('');
-
-    const clients = new Set(flows.map(f => { const m = f.name.match(/\[([^\]]+)\]/); return m ? m[1] : 'Otro'; }));
-    lines.push('*Afectados:* ' + flows.length + ' flows en ' + clients.size + ' cliente' + (clients.size !== 1 ? 's' : ''));
-    lines.push('');
-    lines.push('h3. Flows afectados');
-    lines.push('');
+    const clients = new Set(flows.map(f => {
+      const m = f.name.match(/\[([^\]]+)\]/);
+      return m ? m[1] : null;
+    }).filter(Boolean));
+    parts.push('*Afectados:* ' + flows.length + ' flows' + (clients.size > 0 ? ' en ' + clients.size + ' cliente' + (clients.size !== 1 ? 's' : '') : ''));
+    parts.push('');
+    parts.push('h3. Flows afectados');
+    parts.push('||ID||Flow||');
 
     flows.forEach(f => {
       const url = 'https://flow.vecfleet.io/flows/' + f.id;
-      lines.push('* [' + f.id + ' \u2014 ' + f.name + '|' + url + ']');
-      const detail = (f.errorsRaw || '').replace(/<[^>]+>/g, '').trim().slice(0, 120);
-      if (detail && detail !== errorKey && detail.length > 5) {
-        lines.push('** _' + detail + '_');
-      }
+      parts.push('|' + f.id + '|[' + f.name + '|' + url + ']|');
     });
 
-    lines.push('');
-    lines.push('----');
-    lines.push('_Generado por Flow Monitor \u2014 ' + new Date().toLocaleString('es-AR') + '_');
-    return lines.join('\n');
-  }
+    parts.push('');
+    parts.push('----');
+    parts.push('_Generado por Flow Monitor \u2014 ' + new Date().toLocaleString('es-AR') + '_');
 
+    return parts.join('\n');
+  }
 
   function generateDesc(flows) {
     const today=new Date().toLocaleString('es-AR');
