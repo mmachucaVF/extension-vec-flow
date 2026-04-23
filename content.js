@@ -767,6 +767,53 @@
     return raw.length > 120 ? raw.slice(0, 117) + '...' : (raw || '⚠ Sin detalle');
   }
 
+  function renderAdfPreview(adf) {
+    var preview = document.getElementById('fm-jira-desc-preview');
+    var textarea = document.getElementById('fm-jira-desc');
+    if (!preview || !adf || typeof adf !== 'object') return;
+    var html = adfToHtml(adf.content || []);
+    preview.innerHTML = html;
+    if (textarea) textarea.style.display = 'none';
+    preview.style.display = 'block';
+  }
+
+  function adfToHtml(nodes) {
+    if (!nodes) return '';
+    return nodes.map(function(n) {
+      if (!n) return '';
+      var c = adfToHtml(n.content);
+      if (n.type === 'panel') {
+        var colors = {error:'#ff5630',warning:'#ff8b00',info:'#0052cc',success:'#36b37e'};
+        var bg = {error:'rgba(255,86,48,.1)',warning:'rgba(255,139,0,.1)',info:'rgba(0,82,204,.1)',success:'rgba(54,179,126,.1)'};
+        var pt = n.attrs && n.attrs.panelType || 'info';
+        return '<div style="border-left:3px solid '+(colors[pt]||'#888')+';background:'+(bg[pt]||'rgba(255,255,255,.05)')+';padding:8px 10px;margin:4px 0;border-radius:0 4px 4px 0">'+c+'</div>';
+      }
+      if (n.type === 'expand') {
+        return '<details style="margin:4px 0"><summary style="cursor:pointer;color:#7c8494;font-size:11px">'+(n.attrs&&n.attrs.title||'Ver más')+'</summary><div style="padding:4px 0 0 8px">'+c+'</div></details>';
+      }
+      if (n.type === 'heading') return '<h'+(n.attrs&&n.attrs.level||2)+' style="margin:6px 0 2px;color:#e0e4ed">'+c+'</h'+(n.attrs&&n.attrs.level||2)+'>';
+      if (n.type === 'paragraph') return '<p style="margin:3px 0">'+c+'</p>';
+      if (n.type === 'rule') return '<hr style="border:none;border-top:1px solid rgba(255,255,255,.1);margin:6px 0">';
+      if (n.type === 'bulletList') return '<ul style="margin:2px 0;padding-left:16px">'+c+'</ul>';
+      if (n.type === 'listItem') return '<li>'+c+'</li>';
+      if (n.type === 'table') return '<table style="border-collapse:collapse;width:100%;font-size:10px">'+c+'</table>';
+      if (n.type === 'tableRow') return '<tr>'+c+'</tr>';
+      if (n.type === 'tableHeader') return '<th style="border:1px solid rgba(255,255,255,.15);padding:3px 6px;background:rgba(255,255,255,.08);text-align:left">'+c+'</th>';
+      if (n.type === 'tableCell') return '<td style="border:1px solid rgba(255,255,255,.1);padding:3px 6px">'+c+'</td>';
+      if (n.type === 'codeBlock') return '<pre style="background:rgba(0,0,0,.3);padding:6px;border-radius:4px;font-size:9px;overflow-x:auto;max-height:100px">'+c+'</pre>';
+      if (n.type === 'text') {
+        var t = (n.text||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        var marks = n.marks || [];
+        marks.forEach(function(m) {
+          if (m.type === 'strong') t = '<strong>'+t+'</strong>';
+          if (m.type === 'link') t = '<a href="'+(m.attrs&&m.attrs.href||'#')+'" style="color:#6c63ff" target="_blank">'+t+'</a>';
+        });
+        return t;
+      }
+      if (n.type === 'emoji') return n.attrs&&n.attrs.shortName ? n.attrs.shortName.replace(':x:','❌').replace(':mag:','🔍').replace(':wave:','👋').replace(':','').replace(':','') : '';
+      return c;
+    }).join('');
+  }
   function renderList() {
     const flows=getFiltered(), container=document.getElementById('fm-list-content');
     if(!allFlows.length)return;
@@ -966,7 +1013,7 @@
     document.getElementById('fm-jira-title').value = title;
     var _gdResult = errorKey ? generateGroupDesc(errorKey, sel) : generateDesc(sel);
         if (_gdResult && typeof _gdResult === 'object' && _gdResult.type === 'doc') {
-          window._pendingAdf = _gdResult;
+          window._pendingAdf = _gdResult; setTimeout(function(){ renderAdfPreview(_gdResult); }, 50);
           document.getElementById('fm-jira-desc').value = '[Descripcion ADF generada automaticamente - ' + (errorKey ? sel.length + ' flows, ' + new Set(sel.map(f=>{var m=f.name.match(/\]\s*>\s*([^|>[\]]+?)\s*\|/);return m?m[1]:null;}).filter(Boolean)).size + ' entornos' : sel.length + ' flows') + ']';
         } else {
           window._pendingAdf = null;
@@ -1149,7 +1196,7 @@
   }
 
   async function createJiraTicket() {
-    const projKey=document.getElementById('fm-jira-project').value,typeId=document.getElementById('fm-jira-issuetype').value,title=document.getElementById('fm-jira-title').value.trim(),desc=document.getElementById('fm-jira-desc').value.trim(),priority=document.getElementById('fm-jira-priority').value;
+    const projKey=document.getElementById('fm-jira-project').value,typeId=document.getElementById('fm-jira-issuetype').value,title=document.getElementById('fm-jira-title').value.trim(),desc=window._pendingAdf||document.getElementById('fm-jira-desc').value.trim(),priority=document.getElementById('fm-jira-priority').value;
     const status=document.getElementById('fm-jira-status'),btn=document.getElementById('fm-create-btn');
     if(!projKey||!typeId||!title){status.textContent='⚠️ Completá proyecto, tipo y asunto';status.style.color='#f5923e';return;}
     btn.disabled=true;btn.textContent='⟳ Creando...';status.textContent='';
