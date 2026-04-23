@@ -1057,55 +1057,38 @@
     var httpCode  = httpMatch ? parseInt(httpMatch[1]) : 0;
     var fileName  = fileMatch ? fileMatch[1].split('/').pop() : '';
     var lineNum   = lineMatch ? lineMatch[1] : '';
+    // Extraer JSON embebido si existe
     var jsonStart = raw.indexOf('{');
-    var errorMsg  = '';
-    var errorJson = '';
-    var processName = '';
+    var fullErrorMsg = '';
+    var errorJson    = '';
+    var processName  = '';
     if (jsonStart >= 0) {
       try {
-        var obj = JSON.parse(raw.slice(jsonStart));
+        var jsonLine = raw.slice(jsonStart, raw.indexOf('\n', jsonStart) > 0 ? raw.indexOf('\n', jsonStart) : undefined);
+        var obj = JSON.parse(jsonLine);
         errorJson = JSON.stringify(obj, null, 2);
         var d = Array.isArray(obj.detalle) ? obj.detalle[0] : null;
-        errorMsg = d ? (typeof d === 'string' ? d : (d.message || '')) : (obj.message || '');
-        var procs = obj.pipeline && obj.pipeline.processes;
-        if (procs && procs[0] && procs[0].name) {
-          var pp = procs[0].name.split('\\\\');
-          processName = pp[pp.length-1] || '';
+        fullErrorMsg = d ? (typeof d === 'string' ? d : (d.message || '')) : (obj.message || '');
+        var procs2 = obj.pipeline && obj.pipeline.processes;
+        if (procs2 && procs2[0] && procs2[0].name) {
+          var pp3 = procs2[0].name.split('\\\\');
+          processName = pp3[pp3.length-1] || '';
         }
       } catch(e) {
         errorJson = raw.slice(jsonStart);
       }
     }
-    // Sin JSON — extraer mensaje limpio
-    if (!errorMsg) {
+    if (!fullErrorMsg) {
       var ap = raw.match(/\)\s+(.+)$/);
-      var msg = ap ? ap[1].trim() : '';
-      msg = msg.replace(/^\d{3}\s+/, '').replace(/\b(\w[\w ]{3,25})\s+\1\b/gi, '$1').trim();
-      errorMsg = msg || raw;
+      var msg2 = ap ? ap[1].trim() : '';
+      msg2 = msg2.replace(/^\d{3}\s+/, '').replace(/\b(\w[\w ]{3,25})\s+\1\b/gi, '$1').trim();
+      fullErrorMsg = msg2.split('\n')[0] || raw;
     }
-    // errorMsg: solo la primera línea (antes del stack trace)
-    // errorSummary: mensaje limpio para el panel rojo (sin prefijo técnico ni stack trace)
-        var errorSummary = errorMsg;
-        if (errorSummary.match(/^Code:\s*\d+/i)) {
-          // Tiene prefijo técnico — extraer solo el mensaje del JSON embebido
-          var jsonInErr = errorSummary.indexOf('{');
-          if (jsonInErr >= 0) {
-            try {
-              var errObj = JSON.parse(errorSummary.slice(jsonInErr, errorSummary.indexOf('\n', jsonInErr) > 0 ? errorSummary.indexOf('\n', jsonInErr) : undefined));
-              var ed = Array.isArray(errObj.detalle) ? errObj.detalle[0] : null;
-              errorSummary = ed ? (typeof ed === 'string' ? ed : (ed.message||'')) : (errObj.message||errorSummary.split('\n')[0]);
-            } catch(e3) {
-              errorSummary = errorSummary.split('\n')[0].trim();
-            }
-          } else {
-            errorSummary = errorSummary.split('\n')[0].trim();
-          }
-        } else {
-          errorSummary = errorSummary.split('\n')[0].trim();
-        }
+    // errorSummary = primera línea limpia (sin stack trace)
+    var errorSummary = fullErrorMsg.split('\n')[0].trim();
     if (!processName && fileMatch) {
-      var pp2 = fileMatch[1].match(/Processes\/([^\/]+)\/([^\/\.]+)\.php/i);
-      processName = pp2 ? pp2[2] : fileName.replace('.php','');
+      var pp4 = fileMatch[1].match(/Processes\/([^\/]+)\/([^\/\.]+)\.php/i);
+      processName = pp4 ? pp4[2] : fileName.replace('.php','');
     }
     var clientSet = new Set(flows.map(function(f) {
       var m = f.name.match(/\]\s*>\s*([^|>[\]]+?)\s*\|/);
@@ -1113,7 +1096,6 @@
     }).filter(Boolean));
     var clients = [...clientSet];
     var errorType = processName || (fileName ? fileName.replace('.php','') : 'los flows afectados');
-    // Análisis contextual
     var multi = clients.length > 1;
     var patronCtx = multi
       ? 'El mismo error se registra en ' + clients.length + ' entornos distintos (' + clients.slice(0,3).join(', ') + (clients.length > 3 ? ' y otros' : '') + '), todos con el mismo punto de fallo'
@@ -1124,15 +1106,14 @@
       analisis = patronCtx + patronLoc + ' Podria estar relacionado con la disponibilidad o tiempo de respuesta del servicio externo al que apunta ' + (processName || 'el proceso') + '. Al darse de forma simultanea en multiples tenants, no parece ser un problema aislado de configuracion.';
     } else if (httpCode === 401 || httpCode === 403) {
       analisis = patronCtx + patronLoc + ' Podria estar vinculado con credenciales vencidas, un token expirado, o un cambio de permisos en el servicio externo que consume ' + (processName || 'el proceso') + '.';
-    } else if (errorMsg.match(/SQLSTATE|SQL|database|table/i)) {
+    } else if (fullErrorMsg.match(/SQLSTATE|SQL|database|table/i)) {
       analisis = patronCtx + patronLoc + ' Podria estar relacionado con un cambio de esquema, una migracion pendiente, o conectividad con la base de datos en ' + (processName || 'el proceso') + '.';
-    } else if (errorMsg.match(/connection|connect|refused|timeout/i)) {
+    } else if (fullErrorMsg.match(/connection|connect|refused|timeout/i)) {
       analisis = patronCtx + patronLoc + ' Podria indicar una intermitencia o caida del servicio al que intenta conectarse ' + (processName || 'el proceso') + '.';
     } else {
       analisis = patronCtx + patronLoc + ' El error ocurre de forma consistente en ' + (processName || fileName || 'el mismo punto') + '.';
     }
-    // Helpers ADF
-    var txt=function(t,marks){var n={type:'text',text:String(t)};if(marks)n.marks=marks;return n;};
+    var txt=function(t,m){var n={type:'text',text:String(t)};if(m)n.marks=m;return n;};
     var bold=function(t){return txt(t,[{type:'strong'}]);};
     var para=function(){return{type:'paragraph',content:[].slice.call(arguments)};};
     var h3=function(){return{type:'heading',attrs:{level:3},content:[].slice.call(arguments)};};
@@ -1148,7 +1129,7 @@
     var link=function(t,url){return txt(t,[{type:'link',attrs:{href:url}}]);};
     var codeBlock=function(t){return{type:'codeBlock',attrs:{language:'json'},content:[{type:'text',text:t}]};};
     var content = [];
-    // 1. Panel rojo — solo resumen ejecutivo (sin stack trace)
+    // Panel rojo — solo resumen ejecutivo
     content.push(panel('error',[
       para(emoji('x'), txt(' '), bold('HTTP '+(httpCode||'?'))),
       para(txt(errorSummary)),
@@ -1156,34 +1137,29 @@
       para(bold('Archivo : '), txt(fileName||'N/A'), txt(lineNum ? '  |  Linea : '+lineNum : '')),
       para(bold('Impacto : '), txt(flows.length+' flows en '+clients.length+' entorno'+(clients.length!==1?'s':'')+' \u2014 '+clients.join(', ')))
     ]));
-    // 2. Panel azul — análisis
+    // Panel azul — análisis
     content.push(panel('info',[
       para(emoji('mag'), txt(' '), bold('Analisis preliminar')),
       para(txt(analisis))
     ]));
-    // 3. Contexto
+    // Contexto
     content.push(rule());
     content.push(h3(emoji('wave'), txt(' Contexto')));
-    content.push(para(
-      txt('Buenas Team, les compartimos el siguiente error detectado en el proceso '),
-      bold(errorType),
-      txt(' en ' + clients.length + ' entorno' + (clients.length !== 1 ? 's' : '') + ':')
-    ));
+    content.push(para(txt('Buenas Team, les compartimos el error detectado en el proceso '), bold(errorType), txt(' en '+clients.length+' entorno'+(clients.length!==1?'s':'')+':')));
     content.push(blist(clients.map(function(c){ return txt(c); })));
-    // 4. Flows colapsables
+    // Flows colapsables
     content.push(rule());
     var flowRows = [tr([th('Entorno'), th('Flow'), th('Link')])];
     flows.forEach(function(f) {
-      var cl = (function(){ var m=f.name.match(/\]\s*>\s*([^|>[\]]+?)\s*\|/); return m?m[1].trim():''; })();
-      var tp = f.name.split('|').pop().trim().replace(/^\[GPS\]\s*>\s*/i,'').trim();
-      flowRows.push(tr([td(txt(cl||f.id)), td(txt(tp)), td(link('Ver flow','https://flow.vecfleet.io/flows/'+f.id))]));
+      var cl=(function(){var m=f.name.match(/\]\s*>\s*([^|>[\]]+?)\s*\|/);return m?m[1].trim():'';})();
+      var tp=f.name.split('|').pop().trim().replace(/^\[GPS\]\s*>\s*/i,'').trim();
+      flowRows.push(tr([td(txt(cl||f.id)),td(txt(tp)),td(link('Ver flow','https://flow.vecfleet.io/flows/'+f.id))]));
     });
-    content.push(expand('Ver flows afectados ('+flows.length+')', [tbl(flowRows)]));
-    // 5. JSON Response colapsable — error completo con stack trace
-    var jsonContent = errorJson || errorMsg;
-    var jsonLines = jsonContent.split('\n');
-    var jsonParas = jsonLines.map(function(line){ return para(txt(line||'\u00a0')); });
-    content.push(expand('JSON Response', jsonParas.length > 0 ? jsonParas : [para(txt(jsonContent))]));
+    content.push(expand('Ver flows afectados ('+flows.length+')',[tbl(flowRows)]));
+    // JSON Response colapsable — error completo
+    var jsonContent = errorJson || fullErrorMsg;
+    var jsonParas = jsonContent.split('\n').map(function(line){ return para(txt(line||'\u00a0')); });
+    content.push(expand('JSON Response', jsonParas.length ? jsonParas : [para(txt(jsonContent))]));
     content.push(rule());
     content.push(para(txt('Flow Monitor - '+new Date().toLocaleString('es-AR'))));
     return {version:1, type:'doc', content:content};
