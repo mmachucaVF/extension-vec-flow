@@ -947,51 +947,42 @@
   }
 
   function generateGroupDesc(errorKey, flows) {
-    // Limpiar el error — quitar HTML si hay (ej: respuestas 504 con HTML)
     const cleanError = errorKey
-      .replace(/<[^>]+>/g, ' ')     // quitar tags HTML
-      .replace(/\s+/g, ' ')          // normalizar espacios
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
       .trim()
-      .slice(0, 300);
+      .slice(0, 400);
 
     const lines = [];
 
-    // Header
-    lines.push('h3. [Flow Monitor] Error detectado en ' + flows.length + ' flow' + (flows.length !== 1 ? 's' : ''));
+    lines.push('h3. ⚠️ Error detectado en ' + flows.length + ' flow' + (flows.length !== 1 ? 's' : ''));
     lines.push('');
-
-    // Panel con el error
-    lines.push('{panel:title=⚠ Error|borderStyle=solid|borderColor=#FF5630|titleBGColor=#FFEBE6|bgColor=#1a1a1a}');
+    lines.push('{panel:title=Error|borderStyle=solid|borderColor=#FF5630|titleBGColor=#FFEBE6}');
     lines.push(cleanError);
     lines.push('{panel}');
     lines.push('');
 
-    // Stats rápidas
-    const clients = new Set(flows.map(f => {
-      const m = f.name.match(/\[([^\]]+)\]/);
-      return m ? m[1] : 'Otro';
-    }));
+    const clients = new Set(flows.map(f => { const m = f.name.match(/\[([^\]]+)\]/); return m ? m[1] : 'Otro'; }));
     lines.push('*Afectados:* ' + flows.length + ' flows en ' + clients.size + ' cliente' + (clients.size !== 1 ? 's' : ''));
     lines.push('');
-
-    // Lista de flows — uno por línea
     lines.push('h3. Flows afectados');
     lines.push('');
+
     flows.forEach(f => {
+      const url = 'https://flow.vecfleet.io/flows/' + f.id;
+      lines.push('* [' + f.id + ' \u2014 ' + f.name + '|' + url + ']');
       const detail = (f.errorsRaw || '').replace(/<[^>]+>/g, '').trim().slice(0, 120);
-      lines.push('* *[' + f.id + ']* ' + f.name);
       if (detail && detail !== errorKey && detail.length > 5) {
         lines.push('** _' + detail + '_');
       }
     });
+
     lines.push('');
-
-    // Footer
     lines.push('----');
-    lines.push('_Generado automáticamente por Flow Monitor \u2014 ' + new Date().toLocaleString('es-AR') + '_');
-
+    lines.push('_Generado por Flow Monitor \u2014 ' + new Date().toLocaleString('es-AR') + '_');
     return lines.join('\n');
   }
+
 
   function generateDesc(flows) {
     const today=new Date().toLocaleString('es-AR');
