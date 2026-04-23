@@ -1117,9 +1117,10 @@
     // FIX 2: errorMsg sin duplicados — ya limpiado arriba
     var errLabel = (httpCode ? 'HTTP '+httpCode+' ' : '') + errorMsg.split(' ').slice(0,5).join(' ');
     content.push(panel('error',[
-      para(emoji('x'), txt(' '), bold(errLabel)),
-      para(bold('Proceso: '), txt(processName||'N/A'), txt('  |  '), bold('Archivo: '), txt(fileName+(lineNum?':'+lineNum:''))),
-      para(bold('Flows: '), txt(String(flows.length)), txt('  |  '), bold('Entornos: '), txt(String(clients.length)))
+      para(emoji('x'), txt(' '), bold('HTTP '+(httpCode||'?')+' — '+(errorMsg||'Error desconocido'))),
+      para(bold('Proceso : '), txt(processName||'N/A')),
+      para(bold('Archivo : '), txt(fileName||'N/A'), txt(lineNum ? '  |  Linea : '+lineNum : '')),
+      para(bold('Impacto : '), txt(flows.length+' flows en '+clients.length+' entorno'+(clients.length!==1?'s':'')+' — '+clients.join(', ')))
     ]));
     // 2. Panel de análisis — azul
     content.push(panel('info',[
