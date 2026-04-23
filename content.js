@@ -1085,7 +1085,17 @@
       fullErrorMsg = msg2.split('\n')[0] || raw;
     }
     // errorSummary = primera línea limpia (sin stack trace)
-    var errorSummary = fullErrorMsg.split('\n')[0].trim();
+    // errorSummary: mensaje limpio para panel rojo
+        var _rawLines = fullErrorMsg.split('\n');
+        var _firstLine = _rawLines[0].trim();
+        var errorSummary = _firstLine;
+        if (_firstLine.match(/^Code:\s*\d+/i) && _rawLines.length > 1) {
+          try {
+            var _jObj2 = JSON.parse(_rawLines[1]);
+            var _det2 = Array.isArray(_jObj2.detalle) ? _jObj2.detalle[0] : null;
+            errorSummary = _det2 ? (typeof _det2==='string' ? _det2 : (_det2.message||'')) : (_jObj2.message||_firstLine);
+          } catch(e) { errorSummary = _firstLine; }
+        }
     if (!processName && fileMatch) {
       var pp4 = fileMatch[1].match(/Processes\/([^\/]+)\/([^\/\.]+)\.php/i);
       processName = pp4 ? pp4[2] : fileName.replace('.php','');
