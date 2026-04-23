@@ -1013,7 +1013,18 @@
     document.getElementById('fm-jira-title').value = title;
     var _gdResult = errorKey ? generateGroupDesc(errorKey, sel) : generateDesc(sel);
         if (_gdResult && typeof _gdResult === 'object' && _gdResult.type === 'doc') {
-          window._pendingAdf = _gdResult; setTimeout(function(){ renderAdfPreview(_gdResult); }, 50);
+          window._pendingAdf = _gdResult; setTimeout(function(){
+      // Inyectar el preview div si no existe en el DOM
+      var ta = document.getElementById("fm-jira-desc");
+      if (ta && !document.getElementById("fm-jira-desc-preview")) {
+        var prev = document.createElement("div");
+        prev.id = "fm-jira-desc-preview";
+        prev.style.cssText = "background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.12);border-radius:6px;padding:10px;min-height:120px;max-height:260px;overflow-y:auto;font-size:11px;line-height:1.6;color:#c8ccd4";
+        ta.parentNode.insertBefore(prev, ta.nextSibling);
+        ta.style.display = "none";
+      }
+      renderAdfPreview(_gdResult);
+    }, 50);
           document.getElementById('fm-jira-desc').value = '[Descripcion ADF generada automaticamente - ' + (errorKey ? sel.length + ' flows, ' + new Set(sel.map(f=>{var m=f.name.match(/\]\s*>\s*([^|>[\]]+?)\s*\|/);return m?m[1]:null;}).filter(Boolean)).size + ' entornos' : sel.length + ' flows') + ']';
         } else {
           window._pendingAdf = null;
