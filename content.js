@@ -1085,17 +1085,26 @@
       fullErrorMsg = msg2.split('\n')[0] || raw;
     }
     // errorSummary = primera línea limpia (sin stack trace)
-    // errorSummary: mensaje limpio para panel rojo
-        var _rawLines = fullErrorMsg.split('\n');
-        var _firstLine = _rawLines[0].trim();
-        var errorSummary = _firstLine;
-        if (_firstLine.match(/^Code:\s*\d+/i) && _rawLines.length > 1) {
-          try {
-            var _jObj2 = JSON.parse(_rawLines[1]);
-            var _det2 = Array.isArray(_jObj2.detalle) ? _jObj2.detalle[0] : null;
-            errorSummary = _det2 ? (typeof _det2==='string' ? _det2 : (_det2.message||'')) : (_jObj2.message||_firstLine);
-          } catch(e) { errorSummary = _firstLine; }
-        }
+    // errorSummary: mensaje limpio para panel rojo (sin stack trace)
+        var errorSummary = (function() {
+          var lines = fullErrorMsg.split('\n');
+          var first = lines[0].trim();
+          // Si empieza con 'Code: N - File:' -> extraer del JSON en línea 2
+          if (first.match(/^Code:\s*\d+/i) && lines.length > 1) {
+            try {
+              var jObj = JSON.parse(lines[1]);
+              var det = Array.isArray(jObj.detalle) ? jObj.detalle[0] : null;
+              return det ? (typeof det==='string' ? det : (det.message||'')) : (jObj.message||first);
+            } catch(e) { return first; }
+          }
+          // Cortar antes del stack trace (#0, #1, etc.)
+          var stackIdx = first.indexOf(' #0 ');
+          if (stackIdx > 0) return first.slice(0, stackIdx).trim();
+          // Tomar solo la primera oración (hasta el primer punto final o 120 chars)
+          var dotIdx = first.search(/\.\s/);
+          if (dotIdx > 0 && dotIdx < 200) return first.slice(0, dotIdx+1).trim();
+          return first.slice(0, 200).trim();
+        })();
     if (!processName && fileMatch) {
       var pp4 = fileMatch[1].match(/Processes\/([^\/]+)\/([^\/\.]+)\.php/i);
       processName = pp4 ? pp4[2] : fileName.replace('.php','');
