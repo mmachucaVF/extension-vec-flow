@@ -935,15 +935,16 @@
     const sel = groupFlows || allFlows.filter(f => selectedIds.has(f.id));
     if (!sel.length) return;
 
-    // Contar clientes con regex [CLIENTE] — mismo criterio que generateGroupDesc
+    // Extraer cliente real: "[PROD Env.] > CLIENTE | ..." -> "CLIENTE"
     const clients = [...new Set(sel.map(f => {
-      const m = f.name.match(/\[([^\]]+)\]/);
-      return m ? m[1] : null;
+      const m = f.name.match(/\]\s*>\s*([^|>[\]]+?)\s*\|/);
+      return m ? m[1].trim() : null;
     }).filter(Boolean))];
 
-    const title = errorKey
-      ? '[Flow Monitor] ' + sel.length + ' flows — ' + clients.length + ' cliente' + (clients.length !== 1 ? 's' : '')
-      : '[Flow Monitor] ' + sel.length + ' flows — ' + (clients.length > 0 ? clients.length + ' cliente' + (clients.length !== 1 ? 's' : '') : new Date().toLocaleDateString('es-AR'));
+    const title = '[Flow Monitor] ' + sel.length + ' flows — ' +
+      (clients.length > 0
+        ? clients.length + ' cliente' + (clients.length !== 1 ? 's' : '')
+        : new Date().toLocaleDateString('es-AR'));
 
     document.getElementById('fm-jira-title').value = title;
     document.getElementById('fm-jira-desc').value = errorKey
@@ -959,36 +960,30 @@
       .trim()
       .slice(0, 200);
 
+    // Extraer cliente real: "[PROD Env.] > CLIENTE | ..." -> "CLIENTE"
     var clients = new Set(flows.map(function(f) {
-      var m = f.name.match(/\[([^\]]+)\]/);
-      return m ? m[1] : null;
+      var m = f.name.match(/\]\s*>\s*([^|>[\]]+?)\s*\|/);
+      return m ? m[1].trim() : null;
     }).filter(Boolean));
 
-    var sections = [];
+    var parts = [];
 
-    // Cabecera
-    sections.push(
+    parts.push(
       'ERROR EN ' + flows.length + ' FLOW' + (flows.length !== 1 ? 'S' : '') +
       ' | ' + clients.size + ' CLIENTE' + (clients.size !== 1 ? 'S' : '')
     );
 
-    // Error
-    sections.push('MENSAJE DE ERROR:\n' + cleanError);
+    parts.push('MENSAJE DE ERROR:\n' + cleanError);
 
-    // Flows — cada uno separado con doble salto para que Jira lo renderice bien
     var flowLines = ['FLOWS AFECTADOS (' + flows.length + '):'];
     flows.forEach(function(f) {
-      flowLines.push(
-        '• [' + f.id + '] ' + f.name + '\n' +
-        '  ' + 'https://flow.vecfleet.io/flows/' + f.id
-      );
+      flowLines.push('[' + f.id + '] ' + f.name + ' -> https://flow.vecfleet.io/flows/' + f.id);
     });
-    sections.push(flowLines.join('\n\n'));
+    parts.push(flowLines.join('\n'));
 
-    // Footer
-    sections.push('Generado por Flow Monitor — ' + new Date().toLocaleString('es-AR'));
+    parts.push('Generado por Flow Monitor - ' + new Date().toLocaleString('es-AR'));
 
-    return sections.join('\n\n');
+    return parts.join('\n\n');
   }
 
   function generateDesc(flows) {
