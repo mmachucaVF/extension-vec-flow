@@ -1056,52 +1056,51 @@
           var pp = procs[0].name.split('\\\\');
           processName = pp[pp.length-1] || '';
         }
-      } catch(e) { errorJson = raw.slice(jsonStart, jsonStart+600); }
+      } catch(e) { errorJson = raw.slice(jsonStart, jsonStart+800); }
     }
     if (!errorMsg) {
       var ap = raw.match(/\)\s+(.+)$/);
       var msg = ap ? ap[1].trim() : '';
-      msg = msg.replace(/^\d{3}\s+/,'').replace(/\b(\w[\w ]{3,25})\s+\1\b/gi,'$1').trim();
+      // Quitar status HTTP al inicio y frases duplicadas
+      msg = msg.replace(/^\d{3}\s+/, '').replace(/\b(\w[\w ]{3,25})\s+\1\b/gi, '$1').trim();
       errorMsg = msg || raw.slice(0,150);
     }
     if (!processName && fileMatch) {
       var pp2 = fileMatch[1].match(/Processes\/([^\/]+)\/([^\/\.]+)\.php/i);
       processName = pp2 ? pp2[2] : fileName.replace('.php','');
     }
-    var clientSet = new Set(flows.map(function(f){
-      var m=f.name.match(/\]\s*>\s*([^|>[\]]+?)\s*\|/);
-      return m?m[1].trim():null;
+    // Clientes únicos
+    var clientSet = new Set(flows.map(function(f) {
+      var m = f.name.match(/\]\s*>\s*([^|>[\]]+?)\s*\|/);
+      return m ? m[1].trim() : null;
     }).filter(Boolean));
-    var clients=[...clientSet];
-    var flowType='';
-    if(flows.length>0){
-      var lp=flows[0].name.lastIndexOf('|');
-      flowType=lp>=0?flows[0].name.slice(lp+1).trim():flows[0].name.split('>').pop().trim();
-      flowType=flowType.replace(/^\[GPS\]\s*>\s*/i,'').trim();
-    }
-    var multi=clients.length>1;
-    var patronCtx=multi
-      ?'El mismo error se registra en '+clients.length+' entornos distintos ('+clients.slice(0,3).join(', ')+(clients.length>3?' y otros':'')+'), todos con el mismo punto de fallo'
-      :'El error se concentra en el entorno '+(clients[0]||'');
-    var patronLoc=(fileName?' ('+fileName+(lineNum?':'+lineNum:'')+')':'')+'.';
-    var analisis='';
-    if(httpCode===504||httpCode===503||httpCode===502){
-      analisis=patronCtx+patronLoc+' Podria estar relacionado con la disponibilidad o tiempo de respuesta del servicio externo al que apunta '+(processName||'el proceso')+'. Al darse de forma simultanea en multiples tenants, no parece ser un problema aislado de configuracion.';
-    } else if(httpCode===401||httpCode===403){
-      analisis=patronCtx+patronLoc+' Podria estar vinculado con credenciales vencidas, un token expirado, o un cambio de permisos en el servicio externo que consume '+(processName||'el proceso')+'.';
-    } else if(errorMsg.match(/SQLSTATE|SQL|database|table/i)){
-      analisis=patronCtx+patronLoc+' Podria estar relacionado con un cambio de esquema, una migracion pendiente, o conectividad con la base de datos en '+(processName||'el proceso')+'.';
-    } else if(errorMsg.match(/connection|connect|refused|timeout/i)){
-      analisis=patronCtx+patronLoc+' Podria indicar una intermitencia o caida del servicio al que intenta conectarse '+(processName||'el proceso')+'.';
+    var clients = [...clientSet];
+    // FIX 1: Nombre del error/tipo de flow — NO usar el nombre del primer flow
+    // sino el tipo de proceso o el nombre del archivo
+    var errorType = processName || (fileName ? fileName.replace('.php','') : 'los flows afectados');
+    // Análisis contextual
+    var multi = clients.length > 1;
+    var patronCtx = multi
+      ? 'El mismo error se registra en ' + clients.length + ' entornos distintos (' + clients.slice(0,3).join(', ') + (clients.length > 3 ? ' y otros' : '') + '), todos con el mismo punto de fallo'
+      : 'El error se concentra en el entorno ' + (clients[0] || '');
+    var patronLoc = (fileName ? ' (' + fileName + (lineNum ? ':' + lineNum : '') + ')' : '') + '.';
+    var analisis = '';
+    if (httpCode === 504 || httpCode === 503 || httpCode === 502) {
+      analisis = patronCtx + patronLoc + ' Podria estar relacionado con la disponibilidad o tiempo de respuesta del servicio externo al que apunta ' + (processName || 'el proceso') + '. Al darse de forma simultanea en multiples tenants, no parece ser un problema aislado de configuracion.';
+    } else if (httpCode === 401 || httpCode === 403) {
+      analisis = patronCtx + patronLoc + ' Podria estar vinculado con credenciales vencidas, un token expirado, o un cambio de permisos en el servicio externo que consume ' + (processName || 'el proceso') + '.';
+    } else if (errorMsg.match(/SQLSTATE|SQL|database|table/i)) {
+      analisis = patronCtx + patronLoc + ' Podria estar relacionado con un cambio de esquema, una migracion pendiente, o conectividad con la base de datos en ' + (processName || 'el proceso') + '.';
+    } else if (errorMsg.match(/connection|connect|refused|timeout/i)) {
+      analisis = patronCtx + patronLoc + ' Podria indicar una intermitencia o caida del servicio al que intenta conectarse ' + (processName || 'el proceso') + '.';
     } else {
-      analisis=patronCtx+patronLoc+' El error ocurre de forma consistente en '+(processName||fileName||'el mismo punto')+'.';
+      analisis = patronCtx + patronLoc + ' El error ocurre de forma consistente en ' + (processName || fileName || 'el mismo punto') + '.';
     }
-    // ── Helpers ADF ──
+    // Helpers ADF
     var txt=function(t,marks){var n={type:'text',text:String(t)};if(marks)n.marks=marks;return n;};
     var bold=function(t){return txt(t,[{type:'strong'}]);};
-    var para=function(){var args=[].slice.call(arguments);return{type:'paragraph',content:args};};
-    var h2=function(){var args=[].slice.call(arguments);return{type:'heading',attrs:{level:2},content:args};};
-    var h3=function(){var args=[].slice.call(arguments);return{type:'heading',attrs:{level:3},content:args};};
+    var para=function(){return{type:'paragraph',content:[].slice.call(arguments)};};
+    var h3=function(){return{type:'heading',attrs:{level:3},content:[].slice.call(arguments)};};
     var rule=function(){return{type:'rule'};};
     var emoji=function(name){return{type:'emoji',attrs:{shortName:':'+name+':',text:''}};};
     var panel=function(type,nodes){return{type:'panel',attrs:{panelType:type},content:nodes};};
@@ -1110,45 +1109,48 @@
     var tbl=function(rows){return{type:'table',attrs:{isNumberColumnEnabled:false,layout:'default'},content:rows};};
     var tr=function(cells){return{type:'tableRow',content:cells};};
     var th=function(t){return{type:'tableHeader',attrs:{},content:[para(bold(t))]};};
-    var td=function(){var args=[].slice.call(arguments);return{type:'tableCell',attrs:{},content:[para.apply(null,args)]};};
+    var td=function(){return{type:'tableCell',attrs:{},content:[para.apply(null,[].slice.call(arguments))]}; };
     var link=function(t,url){return txt(t,[{type:'link',attrs:{href:url}}]);};
     var codeBlock=function(t){return{type:'codeBlock',attrs:{language:'json'},content:[{type:'text',text:t}]};};
-    // ── Construir ADF ──
-    var content=[];
-    // 1. Panel de error (rojo)
-    var errorPanelNodes=[
-      para(emoji('x'),txt(' '),bold('HTTP '+(httpCode||'?')+' '+errorMsg.split(' ').slice(0,6).join(' '))),
-      para(bold('Proceso: '),txt(processName||'N/A'),txt('  |  '),bold('Archivo: '),txt(fileName+(lineNum?':'+lineNum:''))),
-      para(bold('Flows: '),txt(String(flows.length)),txt('  |  '),bold('Entornos: '),txt(String(clients.length)))
-    ];
-    content.push(panel('error',errorPanelNodes));
-    // 2. Panel de analisis (info)
+    var content = [];
+    // 1. Panel de error — rojo
+    // FIX 2: errorMsg sin duplicados — ya limpiado arriba
+    var errLabel = (httpCode ? 'HTTP '+httpCode+' ' : '') + errorMsg.split(' ').slice(0,5).join(' ');
+    content.push(panel('error',[
+      para(emoji('x'), txt(' '), bold(errLabel)),
+      para(bold('Proceso: '), txt(processName||'N/A'), txt('  |  '), bold('Archivo: '), txt(fileName+(lineNum?':'+lineNum:''))),
+      para(bold('Flows: '), txt(String(flows.length)), txt('  |  '), bold('Entornos: '), txt(String(clients.length)))
+    ]));
+    // 2. Panel de análisis — azul
     content.push(panel('info',[
-      para(emoji('mag'),txt(' '),bold('Analisis preliminar')),
+      para(emoji('mag'), txt(' '), bold('Analisis preliminar')),
       para(txt(analisis))
     ]));
-    // 3. Contexto
+    // 3. Contexto — FIX 1: usar errorType en vez del nombre del primer flow
     content.push(rule());
-    content.push(h3(emoji('wave'),txt(' Contexto')));
-    content.push(para(txt('Buenas Team, les compartimos el siguiente error detectado en el flow '),bold(flowType),txt(' en '+clients.length+' entorno'+(clients.length!==1?'s':'')+':')));
-    content.push(blist(clients.map(function(c){return txt(c);})));
+    content.push(h3(emoji('wave'), txt(' Contexto')));
+    content.push(para(
+      txt('Buenas Team, les compartimos el siguiente error detectado en el proceso '),
+      bold(errorType),
+      txt(' en ' + clients.length + ' entorno' + (clients.length !== 1 ? 's' : '') + ':')
+    ));
+    content.push(blist(clients.map(function(c){ return txt(c); })));
     // 4. Flows en expand colapsable
     content.push(rule());
-    var flowRows=[tr([th('Entorno'),th('Flow'),th('Link')])];
-    flows.forEach(function(f){
-      var cl=(function(){var m=f.name.match(/\]\s*>\s*([^|>[\]]+?)\s*\|/);return m?m[1].trim():'';})();
-      var tp=f.name.split('|').pop().trim().replace(/^\[GPS\]\s*>\s*/i,'').trim();
-      flowRows.push(tr([td(txt(cl||f.id)),td(txt(tp)),td(link('Ver flow','https://flow.vecfleet.io/flows/'+f.id))]));
+    var flowRows = [tr([th('Entorno'), th('Flow'), th('Link')])];
+    flows.forEach(function(f) {
+      var cl = (function(){ var m=f.name.match(/\]\s*>\s*([^|>[\]]+?)\s*\|/); return m?m[1].trim():''; })();
+      var tp = f.name.split('|').pop().trim().replace(/^\[GPS\]\s*>\s*/i,'').trim();
+      flowRows.push(tr([td(txt(cl||f.id)), td(txt(tp)), td(link('Ver flow','https://flow.vecfleet.io/flows/'+f.id))]));
     });
-    content.push(expand('Ver flows afectados ('+flows.length+')',[tbl(flowRows)]));
-    // 5. JSON tecnico en expand
-    if(errorJson){
-      content.push(expand('Log tecnico',[codeBlock(errorJson.slice(0,1500)+(errorJson.length>1500?'\n...':''))]));
+    content.push(expand('Ver flows afectados ('+flows.length+')', [tbl(flowRows)]));
+    // FIX 3: JSON en codeBlock dentro de expand llamado 'JSON Response'
+    if (errorJson) {
+      content.push(expand('JSON Response', [codeBlock(errorJson.slice(0,1500)+(errorJson.length>1500?'\n...':''))]));
     }
-    // 6. Footer
     content.push(rule());
     content.push(para(txt('Flow Monitor - '+new Date().toLocaleString('es-AR'))));
-    return {version:1,type:'doc',content:content};
+    return {version:1, type:'doc', content:content};
   }
 
   function generateDesc(flows) {
