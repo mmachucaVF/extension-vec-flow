@@ -973,12 +973,11 @@
   function generateGroupDesc(errorKey, flows) {
     var raw = errorKey.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 
-    // Extraer campos técnicos
     var httpMatch = raw.match(/\b(4\d{2}|5\d{2})\b/);
     var fileMatch = raw.match(/File:\s*(\S+\.php)/i);
     var lineMatch = raw.match(/\(Line\s*(\d+)\)/i);
 
-    // Extraer mensaje limpio del JSON embebido
+    // Extraer mensaje y JSON del error
     var jsonStart = raw.indexOf('{');
     var errorMsg = '';
     var errorJson = '';
@@ -989,7 +988,6 @@
         errorJson = JSON.stringify(obj, null, 2);
         var d = Array.isArray(obj.detalle) ? obj.detalle[0] : null;
         errorMsg = d ? (typeof d === 'string' ? d : (d.message || '')) : (obj.message || '');
-        // Extraer nombre del proceso desde processes[0].name
         var procs = obj.pipeline && obj.pipeline.processes;
         if (procs && procs[0] && procs[0].name) {
           var parts = procs[0].name.split('\\\\');
@@ -1001,9 +999,14 @@
     }
     if (!errorMsg && fileMatch) {
       var af = raw.slice(raw.indexOf(fileMatch[1]) + fileMatch[1].length).replace(/\(Line\s*\d+\)/, '').trim();
+      // Quitar el status HTTP duplicado al inicio
+      af = af.replace(/^\d{3}\s+/, '').trim();
       errorMsg = af.slice(0, 150);
     }
-    if (!errorMsg) errorMsg = raw.slice(0, 150);
+    if (!errorMsg) errorMsg = raw.replace(/^Code:\s*\d+\s*-?\s*/i,'').replace(/^File:\s*\S+\s*/i,'').trim().slice(0,150);
+
+    // Limpiar duplicado del HTTP status en errorMsg
+    if (httpMatch) errorMsg = errorMsg.replace(new RegExp('^' + httpMatch[1] + '\\s+'), '').trim();
 
     // Clientes únicos
     var clientSet = new Set(flows.map(function(f) {
@@ -1012,7 +1015,7 @@
     }).filter(Boolean));
     var clients = [...clientSet];
 
-    // Nombre del tipo de flow (parte final del nombre)
+    // Nombre del tipo de flow
     var flowTypeName = '';
     if (flows.length > 0) {
       var lastPipe = flows[0].name.lastIndexOf('|');
@@ -1020,46 +1023,35 @@
       flowTypeName = flowTypeName.replace(/^\[GPS\]\s*>\s*/i, '').trim();
     }
 
-    // Descripción del error para el texto principal
-    var httpStr = httpMatch ? httpMatch[1] + ' ' + errorMsg.split(' ').slice(0,4).join(' ') : errorMsg.slice(0,80);
+    // Descripción del error sin duplicados
+    var httpLabel = httpMatch ? 'HTTP ' + httpMatch[1] : '';
     var procStr = processName ? ' en el proceso *' + processName + '*' : '';
+    var errLabel = (httpLabel ? httpLabel + ' ' : '') + errorMsg.split(' ').slice(0,5).join(' ');
 
+    // Construir out — cada elemento separado con \n\n
     var out = [];
 
-    // 1. Introducción conversacional
     out.push('Buenas Team,');
-    out.push(
-      'Estamos viendo fallas en el flow *' + flowTypeName + '* en ' +
-      clients.length + ' entorno' + (clients.length !== 1 ? 's' : '') +
-      ' con el mismo patron de error:'
-    );
+    out.push('Estamos viendo fallas en el flow *' + flowTypeName + '* en ' +
+      clients.length + ' entorno' + (clients.length !== 1 ? 's' : '') + ' con el mismo patron de error:');
 
-    // 2. Lista de clientes
-    out.push(clients.map(function(c) { return '- ' + c; }).join('\n'));
+    // Cada cliente en su propio parrafo
+    clients.forEach(function(c) { out.push('- ' + c); });
 
-    // 3. Descripción del error
-    out.push(
-      'En todos los casos el error es un *' + httpStr + '*' + procStr + '.'
-    );
+    out.push('En todos los casos el error es un *' + errLabel + '*' + procStr + '.');
+    out.push('Por lo que relevamos, pareceria ser algo compartido ya que se repite el mismo comportamiento en distintos tenants. Solicitamos apoyo con la revision de los mismos.');
 
-    // 4. Hipótesis y pedido
-    out.push(
-      'Por lo que relevamos, pareceria ser algo compartido ya que se repite ' +
-      'el mismo comportamiento en distintos tenants. ' +
-      'Solicitamos apoyo con la revision de los mismos.'
-    );
-
-    // 5. Links por flow con nombre legible
-    out.push(flows.map(function(f) {
+    // Cada flow en su propio parrafo
+    flows.forEach(function(f) {
       var cl = (function() { var m = f.name.match(/\]\s*>\s*([^|>[\]]+?)\s*\|/); return m?m[1].trim():''; })();
       var tp = f.name.split('|').pop().trim().replace(/^\[GPS\]\s*>\s*/i,'').trim();
       var label = (cl || f.id) + ' | ' + tp;
       var fUrl  = 'https://flow.vecfleet.io/flows/' + f.id;
-      var lUrl  = f.executionId ? '\n  log: https://flow.vecfleet.io/executions/' + f.executionId + '/download' : '';
-      return label + '\n  flow: ' + fUrl + lUrl;
-    }).join('\n'));
+      var lUrl  = f.executionId ? 'https://flow.vecfleet.io/executions/' + f.executionId + '/download' : '';
+      out.push(label + (lUrl ? '' : '') );
+      out.push('Flow: ' + fUrl + (lUrl ? '  |  Log: ' + lUrl : ''));
+    });
 
-    // 6. JSON técnico al final como anexo
     if (errorJson) {
       out.push('Detalle tecnico (ultima ejecucion):');
       out.push(errorJson.slice(0, 800) + (errorJson.length > 800 ? '...' : ''));
