@@ -1011,7 +1011,7 @@
 
   function addAndJira(id){selectedIds.add(id);renderList();openJiraModal();}
 
-  function openJiraModal(errorKey, groupFlows) {
+  async function openJiraModal(errorKey, groupFlows) {
     if (!errorKey && !selectedIds.size) return;
     const sel = groupFlows || allFlows.filter(f => selectedIds.has(f.id));
     if (!sel.length) return;
@@ -1027,7 +1027,7 @@
       : '[Flow Monitor] ' + sel.length + ' flows — ' + (clients.length > 0 ? clients.length + ' cliente' + (clients.length !== 1 ? 's' : '') : new Date().toLocaleDateString('es-AR'));
 
     document.getElementById('fm-jira-title').value = title;
-    var _gdResult = errorKey ? generateGroupDesc(errorKey, sel) : generateDesc(sel);
+    var _gdResult = errorKey ? await generateGroupDesc(errorKey, sel) : generateDesc(sel);
         if (_gdResult && typeof _gdResult === 'object' && _gdResult.type === 'doc') {
           window._pendingAdf = _gdResult; setTimeout(function(){
       // Inyectar el preview div si no existe en el DOM
@@ -1049,7 +1049,16 @@
     document.getElementById('fm-modal-overlay').classList.add('fm-visible');
     populateJiraModal();
   }
-  function generateGroupDesc(errorKey, flows) {
+  async function generateAIAnalysis(errorSummary, httpCode, processName, fileName, lineNum, clients, flowsCount) {
+    try {
+      var prompt = 'Sos especialista en soporte de sistemas GPS y flotas.\nAnalizá este error de producción y escribí 2-3 oraciones de análisis en español, siendo específico con los datos provistos. Sin título ni bullets.\n\nError: '+errorSummary+'\nHTTP: '+(httpCode||'N/A')+'\nProceso: '+(processName||'N/A')+'\nArchivo: '+(fileName||'N/A')+(lineNum?':'+lineNum:'')+'\nEntornos: '+clients.length+' ('+clients.slice(0,5).join(', ')+(clients.length>5?'...':'')+')\nFlows: '+flowsCount;
+      var res = await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:300,messages:[{role:'user',content:prompt}]})});
+      var data = await res.json();
+      return data.content&&data.content[0]&&data.content[0].text ? data.content[0].text.trim() : null;
+    } catch(e) { return null; }
+  }
+
+  async function generateGroupDesc(errorKey, flows) {
     var raw = errorKey.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
     var httpMatch = raw.match(/\b(4\d{2}|5\d{2})\b/);
     var fileMatch = raw.match(/File:\s*(\S+\.php)/i);
@@ -1120,18 +1129,8 @@
       ? 'El mismo error se registra en ' + clients.length + ' entornos distintos (' + clients.slice(0,3).join(', ') + (clients.length > 3 ? ' y otros' : '') + '), todos con el mismo punto de fallo'
       : 'El error se concentra en el entorno ' + (clients[0] || '');
     var patronLoc = (fileName ? ' (' + fileName + (lineNum ? ':' + lineNum : '') + ')' : '') + '.';
-    var analisis = '';
-    if (httpCode === 504 || httpCode === 503 || httpCode === 502) {
-      analisis = patronCtx + patronLoc + ' Podria estar relacionado con la disponibilidad o tiempo de respuesta del servicio externo al que apunta ' + (processName || 'el proceso') + '. Al darse de forma simultanea en multiples tenants, no parece ser un problema aislado de configuracion.';
-    } else if (httpCode === 401 || httpCode === 403) {
-      analisis = patronCtx + patronLoc + ' Podria estar vinculado con credenciales vencidas, un token expirado, o un cambio de permisos en el servicio externo que consume ' + (processName || 'el proceso') + '.';
-    } else if (fullErrorMsg.match(/SQLSTATE|SQL|database|table/i)) {
-      analisis = patronCtx + patronLoc + ' Podria estar relacionado con un cambio de esquema, una migracion pendiente, o conectividad con la base de datos en ' + (processName || 'el proceso') + '.';
-    } else if (fullErrorMsg.match(/connection|connect|refused|timeout/i)) {
-      analisis = patronCtx + patronLoc + ' Podria indicar una intermitencia o caida del servicio al que intenta conectarse ' + (processName || 'el proceso') + '.';
-    } else {
-      analisis = patronCtx + patronLoc + ' El error ocurre de forma consistente en ' + (processName || fileName || 'el mismo punto') + '.';
-    }
+    // Análisis generado por IA
+    var analisis = (await generateAIAnalysis(errorSummary, httpCode, processName, fileName, lineNum, clients, flows.length)) || (multi ? 'El mismo error se registra en '+clients.length+' entornos distintos ('+clients.slice(0,3).join(', ')+(clients.length>3?' y otros':'')+'), todos con el mismo punto de fallo ('+(fileName||'')+(lineNum?':'+lineNum:'')+').' : 'El error se concentra en el entorno '+(clients[0]||'')+'.');
     var txt=function(t,m){var n={type:'text',text:String(t)};if(m)n.marks=m;return n;};
     var bold=function(t){return txt(t,[{type:'strong'}]);};
     var para=function(){return{type:'paragraph',content:[].slice.call(arguments)};};
