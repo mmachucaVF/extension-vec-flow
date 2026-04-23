@@ -947,39 +947,57 @@
   }
 
   function generateGroupDesc(errorKey, flows) {
-    const cleanError = errorKey
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim()
-      .slice(0, 300);
+    // Devuelve un objeto ADF (Atlassian Document Format) directamente
+    const cleanError = errorKey.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim().slice(0,400);
+    const clients = new Set(flows.map(f=>{ const m=f.name.match(/\[([^\]]+)\]/); return m?m[1]:null; }).filter(Boolean));
 
-    const parts = [];
-    parts.push('h3. Error detectado en ' + flows.length + ' flow' + (flows.length !== 1 ? 's' : ''));
-    parts.push('');
-    parts.push('{panel:title=Error|borderStyle=solid|borderColor=#FF5630|titleBGColor=#FFEBE6}');
-    parts.push(cleanError);
-    parts.push('{panel}');
-    parts.push('');
+    // Nodos ADF helper
+    const txt  = (t, bold) => bold ? {type:'text',text:t,marks:[{type:'strong'}]} : {type:'text',text:t};
+    const link = (t, url)  => ({type:'text',text:t,marks:[{type:'link',attrs:{href:url}}]});
+    const para = (...nodes) => ({type:'paragraph',content:nodes});
+    const hr   = () => ({type:'rule'});
+    const h2   = (...nodes) => ({type:'heading',attrs:{level:2},content:nodes});
+    const h3   = (...nodes) => ({type:'heading',attrs:{level:3},content:nodes});
+    const code = t => ({type:'codeBlock',attrs:{language:''},content:[{type:'text',text:t}]});
+    const tbl  = rows => ({type:'table',attrs:{isNumberColumnEnabled:false,layout:'default'},content:rows});
+    const tr   = cells => ({type:'tableRow',content:cells});
+    const th   = t => ({type:'tableHeader',attrs:{},content:[para(txt(t,true))]});
+    const td   = (...nodes) => ({type:'tableCell',attrs:{},content:[para(...nodes)]});
 
-    const clients = new Set(flows.map(f => {
-      const m = f.name.match(/\[([^\]]+)\]/);
-      return m ? m[1] : null;
-    }).filter(Boolean));
-    parts.push('*Afectados:* ' + flows.length + ' flows' + (clients.size > 0 ? ' en ' + clients.size + ' cliente' + (clients.size !== 1 ? 's' : '') : ''));
-    parts.push('');
-    parts.push('h3. Flows afectados');
-    parts.push('||ID||Flow||');
+    const content = [];
 
+    // Título
+    content.push(h2(txt('⚠ Error en ' + flows.length + ' flow' + (flows.length!==1?'s':'') + ' — ' + clients.size + ' cliente' + (clients.size!==1?'s':''))));
+    content.push(para());
+
+    // Error en bloque de código
+    content.push(h3(txt('Error detectado')));
+    content.push(code(cleanError));
+    content.push(para());
+
+    // Stats
+    content.push(para(txt('Afectados: ',true), txt(flows.length + ' flows en ' + clients.size + ' cliente' + (clients.size!==1?'s':''))));
+    content.push(para());
+
+    // Tabla de flows
+    content.push(h3(txt('Flows afectados')));
+    const rows = [tr([th('ID'), th('Flow'), th('Link')])];
     flows.forEach(f => {
       const url = 'https://flow.vecfleet.io/flows/' + f.id;
-      parts.push('|' + f.id + '|[' + f.name + '|' + url + ']|');
+      rows.push(tr([
+        td(txt(f.id)),
+        td(txt(f.name)),
+        td(link('Ver flow', url))
+      ]));
     });
+    content.push(tbl(rows));
+    content.push(para());
 
-    parts.push('');
-    parts.push('----');
-    parts.push('_Generado por Flow Monitor \u2014 ' + new Date().toLocaleString('es-AR') + '_');
+    // Footer
+    content.push(hr());
+    content.push(para(txt('Generado por Flow Monitor — ' + new Date().toLocaleString('es-AR'))));
 
-    return parts.join('\n');
+    return {version:1, type:'doc', content};
   }
 
   function generateDesc(flows) {
@@ -1042,7 +1060,11 @@
     const status=document.getElementById('fm-jira-status'),btn=document.getElementById('fm-create-btn');
     if(!projKey||!typeId||!title){status.textContent='⚠️ Completá proyecto, tipo y asunto';status.style.color='#f5923e';return;}
     btn.disabled=true;btn.textContent='⟳ Creando...';status.textContent='';
-    const adfDesc={version:1,type:'doc',content:desc.split('\n\n').filter(Boolean).map(p=>({type:'paragraph',content:[{type:'text',text:p.replace(/\n/g,' ')}]}))};    try{
+    const adfDesc = (typeof desc === 'object' && desc.type === 'doc')
+      ? desc  // ya es ADF (viene de generateGroupDesc)
+      : {version:1,type:'doc',content:desc.split('\n\n').filter(Boolean).map(p=>({
+          type:'paragraph',content:[{type:'text',text:p.replace(/\n/g,' ')}]
+        }))};    try{
       const data=await jiraFetch('/issue',{method:'POST',body:JSON.stringify({fields:{project:{key:projKey},issuetype:{id:typeId},summary:title,description:adfDesc,priority:{name:priority}}})});
       const cfg=getJiraConfig(),url=`${cfg.url.replace(/\/$/,'')}/browse/${data.key}`;
       allFlows.filter(f=>selectedIds.has(f.id)).forEach(f=>{const all=JSON.parse(localStorage.getItem('fm_linked_tickets')||'{}');if(!all[f.id])all[f.id]=[];if(!all[f.id].find(t=>t.key===data.key))all[f.id].unshift({key:data.key,url,title,linkedAt:new Date().toISOString()});localStorage.setItem('fm_linked_tickets',JSON.stringify(all));});
