@@ -964,24 +964,28 @@
       : '[Flow Monitor] ' + sel.length + ' flows — ' + (clients.length > 0 ? clients.length + ' cliente' + (clients.length !== 1 ? 's' : '') : new Date().toLocaleDateString('es-AR'));
 
     document.getElementById('fm-jira-title').value = title;
-    document.getElementById('fm-jira-desc').value = errorKey
-      ? generateGroupDesc(errorKey, sel)
-      : generateDesc(sel);
+    var _gdResult = errorKey ? generateGroupDesc(errorKey, sel) : generateDesc(sel);
+        if (_gdResult && typeof _gdResult === 'object' && _gdResult.type === 'doc') {
+          window._pendingAdf = _gdResult;
+          document.getElementById('fm-jira-desc').value = '[Descripcion ADF generada automaticamente - ' + (errorKey ? sel.length + ' flows, ' + new Set(sel.map(f=>{var m=f.name.match(/\]\s*>\s*([^|>[\]]+?)\s*\|/);return m?m[1]:null;}).filter(Boolean)).size + ' entornos' : sel.length + ' flows') + ']';
+        } else {
+          window._pendingAdf = null;
+          document.getElementById('fm-jira-desc').value = _gdResult || '';
+        }
     document.getElementById('fm-modal-overlay').classList.add('fm-visible');
     populateJiraModal();
   }
   function generateGroupDesc(errorKey, flows) {
     var raw = errorKey.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-    var httpMatch  = raw.match(/\b(4\d{2}|5\d{2})\b/);
-    var fileMatch  = raw.match(/File:\s*(\S+\.php)/i);
-    var lineMatch  = raw.match(/\(Line\s*(\d+)\)/i);
-    var httpCode   = httpMatch ? parseInt(httpMatch[1]) : 0;
-    var fileName   = fileMatch ? fileMatch[1].split('/').pop() : '';
-    var lineNum    = lineMatch ? lineMatch[1] : '';
-    // Extraer JSON embebido si existe
-    var jsonStart  = raw.indexOf('{');
-    var errorMsg   = '';
-    var errorJson  = '';
+    var httpMatch = raw.match(/\b(4\d{2}|5\d{2})\b/);
+    var fileMatch = raw.match(/File:\s*(\S+\.php)/i);
+    var lineMatch = raw.match(/\(Line\s*(\d+)\)/i);
+    var httpCode  = httpMatch ? parseInt(httpMatch[1]) : 0;
+    var fileName  = fileMatch ? fileMatch[1].split('/').pop() : '';
+    var lineNum   = lineMatch ? lineMatch[1] : '';
+    var jsonStart = raw.indexOf('{');
+    var errorMsg  = '';
+    var errorJson = '';
     var processName = '';
     if (jsonStart >= 0) {
       try {
@@ -991,83 +995,102 @@
         errorMsg = d ? (typeof d === 'string' ? d : (d.message || '')) : (obj.message || '');
         var procs = obj.pipeline && obj.pipeline.processes;
         if (procs && procs[0] && procs[0].name) {
-          var parts = procs[0].name.split('\\\\');
-          processName = parts[parts.length - 1] || '';
+          var pp = procs[0].name.split('\\\\');
+          processName = pp[pp.length-1] || '';
         }
-        if (!processName) {
-          var errArr = Array.isArray(obj.error) ? obj.error : [];
-          if (errArr[0] && errArr[0].message) errorMsg = errArr[0].message;
-        }
-      } catch(e) { errorJson = raw.slice(jsonStart, jsonStart + 600); }
+      } catch(e) { errorJson = raw.slice(jsonStart, jsonStart+600); }
     }
-    // Sin JSON — extraer mensaje desde lo que viene después del paréntesis de línea
     if (!errorMsg) {
-      var afterParens = raw.match(/\)\s+(.+)$/);
-      var msg = afterParens ? afterParens[1].trim() : '';
-      msg = msg.replace(/^\d{3}\s+/, '');
-      msg = msg.replace(/\b(\w[\w ]{3,25})\s+\1\b/gi, '$1').trim();
-      errorMsg = msg || raw.slice(0, 150);
+      var ap = raw.match(/\)\s+(.+)$/);
+      var msg = ap ? ap[1].trim() : '';
+      msg = msg.replace(/^\d{3}\s+/,'').replace(/\b(\w[\w ]{3,25})\s+\1\b/gi,'$1').trim();
+      errorMsg = msg || raw.slice(0,150);
     }
-    // processName: desde JSON o inferido del path del archivo
     if (!processName && fileMatch) {
-      var procFromPath = fileMatch[1].match(/Processes\/([^\/]+)\/([^\/\.]+)\.php/i);
-      processName = procFromPath ? procFromPath[2] : fileName.replace('.php','');
+      var pp2 = fileMatch[1].match(/Processes\/([^\/]+)\/([^\/\.]+)\.php/i);
+      processName = pp2 ? pp2[2] : fileName.replace('.php','');
     }
-    var clientSet = new Set(flows.map(function(f) {
-      var m = f.name.match(/\]\s*>\s*([^|>[\]]+?)\s*\|/);
-      return m ? m[1].trim() : null;
+    var clientSet = new Set(flows.map(function(f){
+      var m=f.name.match(/\]\s*>\s*([^|>[\]]+?)\s*\|/);
+      return m?m[1].trim():null;
     }).filter(Boolean));
-    var clients = [...clientSet];
-    var flowType = '';
-    if (flows.length > 0) {
-      var lp = flows[0].name.lastIndexOf('|');
-      flowType = lp >= 0 ? flows[0].name.slice(lp+1).trim() : flows[0].name.split('>').pop().trim();
-      flowType = flowType.replace(/^\[GPS\]\s*>\s*/i,'').trim();
+    var clients=[...clientSet];
+    var flowType='';
+    if(flows.length>0){
+      var lp=flows[0].name.lastIndexOf('|');
+      flowType=lp>=0?flows[0].name.slice(lp+1).trim():flows[0].name.split('>').pop().trim();
+      flowType=flowType.replace(/^\[GPS\]\s*>\s*/i,'').trim();
     }
-    var multi = clients.length > 1;
-    var patronCtx = multi
-      ? 'El mismo error se registra en ' + clients.length + ' entornos distintos (' + clients.slice(0,3).join(', ') + (clients.length > 3 ? ' y otros' : '') + '), todos con el mismo punto de fallo'
-      : 'El error se concentra en el entorno ' + (clients[0] || '');
-    var patronLoc = (fileName ? ' (' + fileName + (lineNum ? ':' + lineNum : '') + ')' : '') + '.';
-    var analisis = '';
-    if (httpCode === 504 || httpCode === 503 || httpCode === 502) {
-      analisis = patronCtx + patronLoc + ' Podria estar relacionado con la disponibilidad o tiempo de respuesta del servicio externo al que apunta ' + (processName || 'el proceso') + '. Al darse de forma simultanea en multiples tenants, no parece ser un problema aislado de configuracion.';
-    } else if (httpCode === 401 || httpCode === 403) {
-      analisis = patronCtx + patronLoc + ' Podria estar vinculado con credenciales vencidas, un token expirado, o un cambio de permisos en el servicio externo que consume ' + (processName || 'el proceso') + '.';
-    } else if (errorMsg.match(/SQLSTATE|SQL|database|table/i)) {
-      analisis = patronCtx + patronLoc + ' Podria estar relacionado con un cambio de esquema, una migracion pendiente, o conectividad con la base de datos en ' + (processName || 'el proceso') + '.';
-    } else if (errorMsg.match(/connection|connect|refused|timeout/i)) {
-      analisis = patronCtx + patronLoc + ' Podria indicar una intermitencia o caida del servicio al que intenta conectarse ' + (processName || 'el proceso') + '.';
+    var multi=clients.length>1;
+    var patronCtx=multi
+      ?'El mismo error se registra en '+clients.length+' entornos distintos ('+clients.slice(0,3).join(', ')+(clients.length>3?' y otros':'')+'), todos con el mismo punto de fallo'
+      :'El error se concentra en el entorno '+(clients[0]||'');
+    var patronLoc=(fileName?' ('+fileName+(lineNum?':'+lineNum:'')+')':'')+'.';
+    var analisis='';
+    if(httpCode===504||httpCode===503||httpCode===502){
+      analisis=patronCtx+patronLoc+' Podria estar relacionado con la disponibilidad o tiempo de respuesta del servicio externo al que apunta '+(processName||'el proceso')+'. Al darse de forma simultanea en multiples tenants, no parece ser un problema aislado de configuracion.';
+    } else if(httpCode===401||httpCode===403){
+      analisis=patronCtx+patronLoc+' Podria estar vinculado con credenciales vencidas, un token expirado, o un cambio de permisos en el servicio externo que consume '+(processName||'el proceso')+'.';
+    } else if(errorMsg.match(/SQLSTATE|SQL|database|table/i)){
+      analisis=patronCtx+patronLoc+' Podria estar relacionado con un cambio de esquema, una migracion pendiente, o conectividad con la base de datos en '+(processName||'el proceso')+'.';
+    } else if(errorMsg.match(/connection|connect|refused|timeout/i)){
+      analisis=patronCtx+patronLoc+' Podria indicar una intermitencia o caida del servicio al que intenta conectarse '+(processName||'el proceso')+'.';
     } else {
-      analisis = patronCtx + patronLoc + ' El error ocurre de forma consistente en ' + (processName || fileName || 'el mismo punto') + '.';
+      analisis=patronCtx+patronLoc+' El error ocurre de forma consistente en '+(processName||fileName||'el mismo punto')+'.';
     }
-    var out = [];
-    // 1. DATOS TECNICOS
-    out.push('=== DETALLE DEL ERROR ===');
-    out.push('Tipo: HTTP ' + (httpCode || '-') + ' ' + errorMsg.split(' ').slice(0,6).join(' '));
-    out.push('Proceso: ' + (processName || 'N/A') + '  |  Archivo: ' + (fileName || 'N/A') + (lineNum ? ':' + lineNum : ''));
-    out.push('Flows afectados: ' + flows.length + '  |  Entornos: ' + clients.length);
-    // 2. ANALISIS
-    out.push('=== ANALISIS PRELIMINAR ===');
-    out.push(analisis);
-    // 3. CONTEXTO
-    out.push('=== CONTEXTO ===');
-    out.push('Buenas Team, les compartimos el siguiente error detectado en el flow *' + flowType + '* en ' + clients.length + ' entorno' + (clients.length !== 1 ? 's' : '') + ':');
-    clients.forEach(function(c) { out.push('- ' + c); });
-    // 4. FLOWS
-    out.push('=== FLOWS AFECTADOS (' + flows.length + ') ===');
-    flows.forEach(function(f) {
-      var cl = (function(){ var m=f.name.match(/\]\s*>\s*([^|>[\]]+?)\s*\|/); return m?m[1].trim():''; })();
-      var tp = f.name.split('|').pop().trim().replace(/^\[GPS\]\s*>\s*/i,'').trim();
-      out.push((cl||f.id) + ' | ' + tp + ' -> https://flow.vecfleet.io/flows/' + f.id);
+    // ── Helpers ADF ──
+    var txt=function(t,marks){var n={type:'text',text:String(t)};if(marks)n.marks=marks;return n;};
+    var bold=function(t){return txt(t,[{type:'strong'}]);};
+    var para=function(){var args=[].slice.call(arguments);return{type:'paragraph',content:args};};
+    var h2=function(){var args=[].slice.call(arguments);return{type:'heading',attrs:{level:2},content:args};};
+    var h3=function(){var args=[].slice.call(arguments);return{type:'heading',attrs:{level:3},content:args};};
+    var rule=function(){return{type:'rule'};};
+    var emoji=function(name){return{type:'emoji',attrs:{shortName:':'+name+':',text:''}};};
+    var panel=function(type,nodes){return{type:'panel',attrs:{panelType:type},content:nodes};};
+    var expand=function(title,nodes){return{type:'expand',attrs:{title:title},content:nodes};};
+    var blist=function(items){return{type:'bulletList',content:items.map(function(c){return{type:'listItem',content:[para(c)]};})};};
+    var tbl=function(rows){return{type:'table',attrs:{isNumberColumnEnabled:false,layout:'default'},content:rows};};
+    var tr=function(cells){return{type:'tableRow',content:cells};};
+    var th=function(t){return{type:'tableHeader',attrs:{},content:[para(bold(t))]};};
+    var td=function(){var args=[].slice.call(arguments);return{type:'tableCell',attrs:{},content:[para.apply(null,args)]};};
+    var link=function(t,url){return txt(t,[{type:'link',attrs:{href:url}}]);};
+    var codeBlock=function(t){return{type:'codeBlock',attrs:{language:'json'},content:[{type:'text',text:t}]};};
+    // ── Construir ADF ──
+    var content=[];
+    // 1. Panel de error (rojo)
+    var errorPanelNodes=[
+      para(emoji('x'),txt(' '),bold('HTTP '+(httpCode||'?')+' '+errorMsg.split(' ').slice(0,6).join(' '))),
+      para(bold('Proceso: '),txt(processName||'N/A'),txt('  |  '),bold('Archivo: '),txt(fileName+(lineNum?':'+lineNum:''))),
+      para(bold('Flows: '),txt(String(flows.length)),txt('  |  '),bold('Entornos: '),txt(String(clients.length)))
+    ];
+    content.push(panel('error',errorPanelNodes));
+    // 2. Panel de analisis (info)
+    content.push(panel('info',[
+      para(emoji('mag'),txt(' '),bold('Analisis preliminar')),
+      para(txt(analisis))
+    ]));
+    // 3. Contexto
+    content.push(rule());
+    content.push(h3(emoji('wave'),txt(' Contexto')));
+    content.push(para(txt('Buenas Team, les compartimos el siguiente error detectado en el flow '),bold(flowType),txt(' en '+clients.length+' entorno'+(clients.length!==1?'s':'')+':')));
+    content.push(blist(clients.map(function(c){return txt(c);})));
+    // 4. Flows en expand colapsable
+    content.push(rule());
+    var flowRows=[tr([th('Entorno'),th('Flow'),th('Link')])];
+    flows.forEach(function(f){
+      var cl=(function(){var m=f.name.match(/\]\s*>\s*([^|>[\]]+?)\s*\|/);return m?m[1].trim():'';})();
+      var tp=f.name.split('|').pop().trim().replace(/^\[GPS\]\s*>\s*/i,'').trim();
+      flowRows.push(tr([td(txt(cl||f.id)),td(txt(tp)),td(link('Ver flow','https://flow.vecfleet.io/flows/'+f.id))]));
     });
-    // 5. JSON tecnico
-    if (errorJson) {
-      out.push('=== LOG TECNICO ===');
-      out.push(errorJson.slice(0, 800) + (errorJson.length > 800 ? '...' : ''));
+    content.push(expand('Ver flows afectados ('+flows.length+')',[tbl(flowRows)]));
+    // 5. JSON tecnico en expand
+    if(errorJson){
+      content.push(expand('Log tecnico',[codeBlock(errorJson.slice(0,1500)+(errorJson.length>1500?'\n...':''))]));
     }
-    out.push('Flow Monitor - ' + new Date().toLocaleString('es-AR'));
-    return out.join('\n\n');
+    // 6. Footer
+    content.push(rule());
+    content.push(para(txt('Flow Monitor - '+new Date().toLocaleString('es-AR'))));
+    return {version:1,type:'doc',content:content};
   }
 
   function generateDesc(flows) {
@@ -1130,7 +1153,7 @@
     const status=document.getElementById('fm-jira-status'),btn=document.getElementById('fm-create-btn');
     if(!projKey||!typeId||!title){status.textContent='⚠️ Completá proyecto, tipo y asunto';status.style.color='#f5923e';return;}
     btn.disabled=true;btn.textContent='⟳ Creando...';status.textContent='';
-    const adfDesc={version:1,type:'doc',content:desc.split('\n\n').filter(Boolean).map(p=>({type:'paragraph',content:[{type:'text',text:p.replace(/\n/g,' ')}]}))};    try{
+    const adfDesc = (desc && typeof desc === 'object' && desc.type === 'doc') ? desc : {version:1,type:'doc',content:(desc||'').split('\n\n').filter(Boolean).map(p=>({type:'paragraph',content:[{type:'text',text:p.replace(/\n/g,' ')}]}))};    try{
       const data=await jiraFetch('/issue',{method:'POST',body:JSON.stringify({fields:{project:{key:projKey},issuetype:{id:typeId},summary:title,description:adfDesc,priority:{name:priority}}})});
       const cfg=getJiraConfig(),url=`${cfg.url.replace(/\/$/,'')}/browse/${data.key}`;
       allFlows.filter(f=>selectedIds.has(f.id)).forEach(f=>{const all=JSON.parse(localStorage.getItem('fm_linked_tickets')||'{}');if(!all[f.id])all[f.id]=[];if(!all[f.id].find(t=>t.key===data.key))all[f.id].unshift({key:data.key,url,title,linkedAt:new Date().toISOString()});localStorage.setItem('fm_linked_tickets',JSON.stringify(all));});
