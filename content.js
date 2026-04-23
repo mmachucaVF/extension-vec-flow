@@ -1084,7 +1084,25 @@
       errorMsg = msg || raw;
     }
     // errorMsg: solo la primera línea (antes del stack trace)
-    var errorSummary = errorMsg.split('\n')[0].trim();
+    // errorSummary: mensaje limpio para el panel rojo (sin prefijo técnico ni stack trace)
+        var errorSummary = errorMsg;
+        if (errorSummary.match(/^Code:\s*\d+/i)) {
+          // Tiene prefijo técnico — extraer solo el mensaje del JSON embebido
+          var jsonInErr = errorSummary.indexOf('{');
+          if (jsonInErr >= 0) {
+            try {
+              var errObj = JSON.parse(errorSummary.slice(jsonInErr, errorSummary.indexOf('\n', jsonInErr) > 0 ? errorSummary.indexOf('\n', jsonInErr) : undefined));
+              var ed = Array.isArray(errObj.detalle) ? errObj.detalle[0] : null;
+              errorSummary = ed ? (typeof ed === 'string' ? ed : (ed.message||'')) : (errObj.message||errorSummary.split('\n')[0]);
+            } catch(e3) {
+              errorSummary = errorSummary.split('\n')[0].trim();
+            }
+          } else {
+            errorSummary = errorSummary.split('\n')[0].trim();
+          }
+        } else {
+          errorSummary = errorSummary.split('\n')[0].trim();
+        }
     if (!processName && fileMatch) {
       var pp2 = fileMatch[1].match(/Processes\/([^\/]+)\/([^\/\.]+)\.php/i);
       processName = pp2 ? pp2[2] : fileName.replace('.php','');
