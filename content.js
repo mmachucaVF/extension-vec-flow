@@ -1117,7 +1117,8 @@
     // FIX 2: errorMsg sin duplicados — ya limpiado arriba
     var errLabel = (httpCode ? 'HTTP '+httpCode+' ' : '') + errorMsg.split(' ').slice(0,5).join(' ');
     content.push(panel('error',[
-      para(emoji('x'), txt(' '), bold('HTTP '+(httpCode||'?')+' — '+(errorMsg||'Error desconocido'))),
+      para(emoji('x'), txt(' '), bold('HTTP '+(httpCode||'?'))),
+      para(txt(errorMsg||'Error desconocido')),
       para(bold('Proceso : '), txt(processName||'N/A')),
       para(bold('Archivo : '), txt(fileName||'N/A'), txt(lineNum ? '  |  Linea : '+lineNum : '')),
       para(bold('Impacto : '), txt(flows.length+' flows en '+clients.length+' entorno'+(clients.length!==1?'s':'')+' — '+clients.join(', ')))
@@ -1146,9 +1147,7 @@
     });
     content.push(expand('Ver flows afectados ('+flows.length+')', [tbl(flowRows)]));
     // JSON Response — siempre visible, usa JSON si existe sino el error raw
-    var jsonContent = errorJson
-      ? errorJson.slice(0,1500)+(errorJson.length>1500?'\n...':'')
-      : raw.slice(0,800)+(raw.length>800?'\n...':'');
+    var jsonContent = errorJson || raw;
     content.push(expand('JSON Response', [codeBlock(jsonContent)]));
     content.push(rule());
     content.push(para(txt('Flow Monitor - '+new Date().toLocaleString('es-AR'))));
