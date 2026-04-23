@@ -953,28 +953,18 @@
     populateJiraModal();
   }
   function generateGroupDesc(errorKey, flows) {
-    // Limpiar el error — quitar HTML (ej: respuestas 504 con HTML embebido)
     var raw = errorKey.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 
-    // Extraer campos técnicos para DevOps
+    // Extraer campos técnicos
+    var httpMatch = raw.match(/\b(4\d{2}|5\d{2})\b/);
     var codeMatch = raw.match(/Code:\s*(\d+)/i);
     var fileMatch = raw.match(/File:\s*(\S+\.php)/i);
     var lineMatch = raw.match(/\(Line\s*(\d+)\)/i);
-    var httpMatch = raw.match(/\b(4\d{2}|5\d{2})\b/);
-    // Extraer mensaje limpio: lo que viene después del path del archivo
-    var msgMatch  = raw.match(/\.php(?:\(Line\s*\d+\))?\s+(.*)/i);
-    var cleanMsg  = msgMatch ? msgMatch[1].replace(/\s+/g,' ').trim() : '';
-    // Si cleanMsg incluye HTML del 504, cortarlo antes del primer tag
-    var htmlStart = cleanMsg.indexOf('<!');
-    if (htmlStart > 0) cleanMsg = cleanMsg.slice(0, htmlStart).trim();
-    if (!cleanMsg) cleanMsg = raw.slice(0, 200);
-
-    var errorLines = [];
-    if (httpMatch)  errorLines.push('HTTP Status: ' + httpMatch[1]);
-    if (codeMatch)  errorLines.push('Code: ' + codeMatch[1]);
-    if (fileMatch)  errorLines.push('Archivo: ' + fileMatch[1]);
-    if (lineMatch)  errorLines.push('Linea: ' + lineMatch[1]);
-    if (cleanMsg)   errorLines.push('Mensaje: ' + cleanMsg);
+    // Mensaje: lo que viene después de la línea, limpiando repeticiones del status
+    var msgMatch  = raw.match(/\(Line\s*\d+\)\s+(.*)/i);
+    var cleanMsg  = msgMatch ? msgMatch[1].trim() : raw.slice(0, 150);
+    if (httpMatch) cleanMsg = cleanMsg.replace(new RegExp('^' + httpMatch[1] + '\\s+'), '');
+    cleanMsg = cleanMsg.replace(/\b(\w[\w\s]{2,20})\b\s+\b\1\b/gi, '$1').trim();
 
     // Clientes reales
     var clients = new Set(flows.map(function(f) {
@@ -985,7 +975,16 @@
     var out = [];
 
     out.push('ERROR EN ' + flows.length + ' FLOWS | ' + clients.size + ' CLIENTES');
+
+    // Resumen estructurado — cada campo en su línea
+    var errorLines = [];
+    if (httpMatch) errorLines.push('HTTP Status : ' + httpMatch[1]);
+    if (codeMatch) errorLines.push('Exit Code   : ' + codeMatch[1]);
+    if (fileMatch) errorLines.push('Archivo     : ' + fileMatch[1]);
+    if (lineMatch) errorLines.push('Linea       : ' + lineMatch[1]);
+    if (cleanMsg && !httpMatch && !fileMatch) errorLines.push('Detalle     : ' + cleanMsg.slice(0, 120));
     out.push('RESUMEN DEL ERROR\n' + errorLines.join('\n'));
+
     out.push('FLOWS AFECTADOS (' + flows.length + ')');
 
     flows.forEach(function(f) {
