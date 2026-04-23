@@ -388,27 +388,30 @@
     const total = pending.length;
     let done = 0;
 
-    const showProgress = () => {
-      const pct = Math.round((done / total) * 100);
-      const existing = document.getElementById('fm-err-loading');
-      if (existing) {
-        existing.querySelector('.fm-err-txt').textContent = 'Cargando detalles... ' + done + '/' + total;
-        existing.querySelector('.fm-err-fill').style.width = pct + '%';
-        return;
-      }
-      if (!container) return;
+    // Crear barra de loading una sola vez
+    if (groupByError && container) {
       const div = document.createElement('div');
       div.id = 'fm-err-loading';
       div.style.cssText = 'padding:28px 20px;display:flex;flex-direction:column;align-items:center;gap:14px';
       div.innerHTML = '<span class="fm-err-txt" style="font-size:11px;color:#7c8494">Cargando detalles... 0/' + total + '</span>'
         + '<div style="width:80%;height:3px;background:rgba(255,255,255,.08);border-radius:2px">'
-        + '<div class="fm-err-fill" style="height:100%;width:0%;background:#6c63ff;border-radius:2px;transition:width .15s"></div>'
+        + '<div class="fm-err-fill" style="height:100%;width:0%;background:#6c63ff;border-radius:2px"></div>'
         + '</div>';
       container.innerHTML = '';
       container.appendChild(div);
-    };
+    }
 
-    if (groupByError) showProgress();
+    // Actualizar la barra — sin transición, siempre creciente
+    const updateBar = () => {
+      const el = document.getElementById('fm-err-loading');
+      if (!el) return;
+      const pct = Math.round((done / total) * 100);
+      el.querySelector('.fm-err-txt').textContent = 'Cargando detalles... ' + done + '/' + total;
+      // Nunca retroceder: tomar el máximo entre el valor actual y el nuevo
+      const fill = el.querySelector('.fm-err-fill');
+      const current = parseFloat(fill.style.width) || 0;
+      fill.style.width = Math.max(current, pct) + '%';
+    };
 
     const BATCH = 8;
     for (let i = 0; i < pending.length; i += BATCH) {
@@ -443,10 +446,9 @@
         } catch(e) {
           f.errors = 'Sin detalle';
         } finally {
-          // Siempre incrementar — tanto en éxito como en error
           f.errorsLoaded = true;
           done++;
-          if (groupByError) showProgress();
+          if (groupByError) updateBar();
         }
       }));
     }
@@ -455,6 +457,7 @@
     if (loadingEl) loadingEl.remove();
     if (groupByError) renderList();
   }
+
 
   async function fetchStateTotals() {
     const getTotal = async (state) => {
