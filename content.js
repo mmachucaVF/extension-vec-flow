@@ -973,12 +973,10 @@
   function generateGroupDesc(errorKey, flows) {
     var raw = errorKey.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 
-    // Extraer campos técnicos del error
     var httpMatch = raw.match(/\b(4\d{2}|5\d{2})\b/);
     var fileMatch = raw.match(/File:\s*(\S+\.php)/i);
     var lineMatch = raw.match(/\(Line\s*(\d+)\)/i);
 
-    // Extraer mensaje limpio desde el JSON embebido si existe
     var jsonStart = raw.indexOf('{');
     var errorMsg = '';
     if (jsonStart >= 0) {
@@ -991,36 +989,48 @@
       } catch(e) {}
     }
     if (!errorMsg && fileMatch) {
-      // Sin JSON — usar lo que hay después del archivo
-      var afterFile = raw.slice(raw.indexOf(fileMatch[1]) + fileMatch[1].length).replace(/\(Line\s*\d+\)/, '').trim();
+      var afterFile = raw.slice(raw.indexOf(fileMatch[1]) + fileMatch[1].length)
+        .replace(/\(Line\s*\d+\)/, '').trim();
       errorMsg = afterFile.slice(0, 150);
     }
     if (!errorMsg) errorMsg = raw.slice(0, 150);
 
-    // Clientes
     var clientSet = new Set(flows.map(function(f) {
       var m = f.name.match(/\]\s*>\s*([^|>[\]]+?)\s*\|/);
       return m ? m[1].trim() : null;
     }).filter(Boolean));
     var clients = [...clientSet];
 
+    // Tomar un execution ID de ejemplo para el link del log
+    var sampleFlow = flows.find(function(f) { return f.executionId; });
+    var logUrl = sampleFlow
+      ? 'https://flow.vecfleet.io/executions/' + sampleFlow.executionId + '/download'
+      : '';
+
     var out = [];
 
-    // 1. ERROR — protagonista
+    // 1. ERROR
     out.push('== ERROR ==');
     out.push(errorMsg || raw.slice(0, 200));
-    if (httpMatch) out.push('HTTP ' + httpMatch[1] +
-      (fileMatch ? ' | ' + fileMatch[1].split('/').pop() + (lineMatch ? ':' + lineMatch[1] : '') : ''));
+    var techLine = '';
+    if (httpMatch) techLine += 'HTTP ' + httpMatch[1];
+    if (fileMatch) techLine += (techLine ? ' | ' : '') + fileMatch[1].split('/').pop() + (lineMatch ? ':' + lineMatch[1] : '');
+    if (techLine)  out.push(techLine);
+    if (logUrl)    out.push('Log de ejemplo: ' + logUrl);
 
-    // 2. IMPACTO — compacto
+    // 2. IMPACTO
     out.push('== IMPACTO ==');
-    out.push(flows.length + ' flows afectados en ' + clients.length + ' cliente' + (clients.length !== 1 ? 's' : '') +
-      ': ' + clients.join(', '));
+    out.push(flows.length + ' flows en ' + clients.length + ' cliente' +
+      (clients.length !== 1 ? 's' : '') + ': ' + clients.join(', '));
 
-    // 3. FLOWS — ID + nombre + link en una línea cada uno
+    // 3. FLOWS con link al log individual
     out.push('== FLOWS (' + flows.length + ') ==');
     flows.forEach(function(f) {
-      out.push('[' + f.id + '] ' + f.name + ' -> https://flow.vecfleet.io/flows/' + f.id);
+      var flowUrl = 'https://flow.vecfleet.io/flows/' + f.id;
+      var logLink = f.executionId
+        ? ' | log: https://flow.vecfleet.io/executions/' + f.executionId + '/download'
+        : '';
+      out.push('[' + f.id + '] ' + f.name + ' -> ' + flowUrl + logLink);
     });
 
     out.push('Flow Monitor - ' + new Date().toLocaleString('es-AR'));
