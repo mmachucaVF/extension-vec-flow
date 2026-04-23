@@ -947,23 +947,42 @@
   }
 
   function generateGroupDesc(errorKey, flows) {
-    var cleanError = errorKey.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim().slice(0,300);
-    var clients = new Set(flows.map(function(f){ var m=f.name.match(/\[([^\]]+)\]/); return m?m[1]:null; }).filter(Boolean));
-    var lines = [];
-    lines.push('ERROR DETECTADO EN ' + flows.length + ' FLOW' + (flows.length!==1?'S':'') + ' | ' + clients.size + ' CLIENTE' + (clients.size!==1?'S':''));
-    lines.push('');
-    lines.push('Mensaje de error:');
-    lines.push(cleanError);
-    lines.push('');
-    lines.push('FLOWS AFECTADOS (' + flows.length + '):');
+    var cleanError = errorKey
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 200);
+
+    var clients = new Set(flows.map(function(f) {
+      var m = f.name.match(/\[([^\]]+)\]/);
+      return m ? m[1] : null;
+    }).filter(Boolean));
+
+    var sections = [];
+
+    // Cabecera
+    sections.push(
+      'ERROR EN ' + flows.length + ' FLOW' + (flows.length !== 1 ? 'S' : '') +
+      ' | ' + clients.size + ' CLIENTE' + (clients.size !== 1 ? 'S' : '')
+    );
+
+    // Error
+    sections.push('MENSAJE DE ERROR:\n' + cleanError);
+
+    // Flows — cada uno separado con doble salto para que Jira lo renderice bien
+    var flowLines = ['FLOWS AFECTADOS (' + flows.length + '):'];
     flows.forEach(function(f) {
-      lines.push('  [' + f.id + '] ' + f.name);
-      lines.push('  https://flow.vecfleet.io/flows/' + f.id);
+      flowLines.push(
+        '• [' + f.id + '] ' + f.name + '\n' +
+        '  ' + 'https://flow.vecfleet.io/flows/' + f.id
+      );
     });
-    lines.push('');
-    lines.push('---');
-    lines.push('Generado por Flow Monitor - ' + new Date().toLocaleString('es-AR'));
-    return lines.join('\n');
+    sections.push(flowLines.join('\n\n'));
+
+    // Footer
+    sections.push('Generado por Flow Monitor — ' + new Date().toLocaleString('es-AR'));
+
+    return sections.join('\n\n');
   }
 
   function generateDesc(flows) {
