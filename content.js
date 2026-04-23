@@ -749,6 +749,33 @@
     return flows;
   }
 
+  function cleanErrorLabel(raw) {
+    if (!raw || raw === 'Sin detalle') return 'Sin detalle';
+    // Intentar parsear si es JSON
+    try {
+      var obj = JSON.parse(raw);
+      // Extraer el campo más informativo
+      var msg = obj.detalle && obj.detalle[0] ? obj.detalle[0]
+              : obj.message ? obj.message
+              : obj.error   ? obj.error
+              : raw;
+      // Si detalle es array de strings, tomar el primero
+      if (Array.isArray(obj.detalle) && typeof obj.detalle[0] === 'string') {
+        msg = obj.detalle[0];
+      } else if (Array.isArray(obj.detalle) && obj.detalle[0] && obj.detalle[0].message) {
+        msg = obj.detalle[0].message;
+      }
+      raw = typeof msg === 'string' ? msg : JSON.stringify(msg);
+    } catch(e) {}
+    // Limpiar HTML
+    raw = raw.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    // Quitar prefijos técnicos comunes
+    raw = raw.replace(/^Code:\s*\d+\s*-\s*/i, '');
+    raw = raw.replace(/^File:\s*\S+\s*/i, '');
+    // Truncar
+    return raw.length > 120 ? raw.slice(0, 117) + '...' : raw;
+  }
+
   function renderList() {
     const flows=getFiltered(), container=document.getElementById('fm-list-content');
     if(!allFlows.length)return;
