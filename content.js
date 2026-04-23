@@ -787,7 +787,7 @@
           <span class="fm-error-group-chevron" style="color:${clr}">${exp?'▼':'▶'}</span>
           <span class="fm-error-group-msg" style="color:${clr}">${esc(g.label)}</span>
         </div>
-        <div class="fm-error-group-meta" onclick="event.stopPropagation()">
+        <div class="fm-error-group-meta">
           <span class="fm-group-cnt" style="color:${clr};font-weight:600">${g.flows.length} flow${g.flows.length!==1?'s':''}</span>
           <button class="fm-chip" style="font-size:9px;padding:2px 7px" data-action="sel-group" data-group-key="${esc(g.key)}">${allSel?'☑️':'☐'} sel.</button>
           <button class="fm-chip" style="font-size:9px;padding:2px 7px;background:rgba(108,99,255,.15);border-color:rgba(108,99,255,.35);color:#8c85ff" data-action="ticket-group" data-group-key="${esc(g.key)}">🎫 ticket</button>
