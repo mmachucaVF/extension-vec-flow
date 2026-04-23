@@ -774,28 +774,27 @@
     document.getElementById('fm-pagination').innerHTML=`<div class="fm-pag-info">${flows.length} flows</div>`;
   }
 
-  function renderByError(flows,container) {
-    const withError=flows.filter(f=>f.state!=='ok'), groups={};
-    for(const f of withError){const key=f.errors||'__timeout__';if(!groups[key])groups[key]={key,label:f.errors||(f.state==='timeout'?'Timeout — sin mensaje':'Sin detalle'),flows:[],isErr:f.state==='error'};groups[key].flows.push(f);}
-    const sorted=Object.values(groups).sort((a,b)=>b.flows.length-a.flows.length);
-    let html=`<div class="fm-summary-bar"><span class="fm-summary-label">📊 ${sorted.length} tipo${sorted.length!==1?'s':''} de error</span><span class="fm-summary-sub">${withError.length} flows con fallo</span></div>`;
-    for(const g of sorted){
-      const exp=expandedGroups.has(g.key),allSel=g.flows.every(f=>selectedIds.has(f.id));
-      const clr=g.isErr?'#f05050':'#f5923e',bg=g.isErr?'rgba(240,80,80,.06)':'rgba(245,146,62,.06)';
-      html+=`<div><div class="fm-error-group-hdr" data-action="toggle-err-group" data-group-key="${esc(g.key)}" style="background:${bg}">
-        <div class="fm-error-group-top">
-          <span class="fm-error-group-chevron" style="color:${clr}">${exp?'▼':'▶'}</span>
-          <span class="fm-error-group-msg" style="color:${clr}">${esc(cleanErrorLabel(g.label))}</span>
-        </div>
-        <div class="fm-error-group-meta">
-          <span class="fm-group-cnt" style="color:${clr};font-weight:600">${g.flows.length} flow${g.flows.length!==1?'s':''}</span>
-          <button class="fm-chip" style="font-size:9px;padding:2px 7px" data-action="sel-group" data-group-key="${esc(g.key)}">${allSel?'☑️':'☐'} sel.</button>
-          <button class="fm-chip" style="font-size:9px;padding:2px 7px;background:rgba(108,99,255,.15);border-color:rgba(108,99,255,.35);color:#8c85ff" data-action="ticket-group" data-group-key="${esc(g.key)}">🎫 ticket</button>
-        </div>
-      </div>${exp?`<div class="fm-error-group-body">${g.flows.map(rowHtml).join('')}</div>`:''}</div>`;
+  function cleanErrorLabel(raw) {
+    if (!raw || raw === 'Sin detalle') return '⚠ Sin detalle';
+    // Formato: 'Code: 0 - File: ...php(Line N) {JSON}'
+    var jsonStart = raw.indexOf('{');
+    if (jsonStart >= 0) {
+      try {
+        var obj = JSON.parse(raw.slice(jsonStart));
+        var d = Array.isArray(obj.detalle) ? obj.detalle[0] : null;
+        var msg = d
+          ? (typeof d === 'string' ? d : (d.message || JSON.stringify(d)))
+          : (obj.message || null);
+        if (msg) raw = String(msg);
+      } catch(e) {
+        // JSON truncado — usar texto crudo desde {
+        raw = raw.slice(jsonStart);
+      }
     }
-    container.innerHTML=html;
-    document.getElementById('fm-pagination').innerHTML=`<div class="fm-pag-info">${withError.length} con fallo · ${sorted.length} tipos</div>`;
+    raw = raw.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    raw = raw.replace(/^\{.*$/s, '').trim();
+    raw = raw.replace(/^Code:\s*\d+\s*-?\s*/i, '').replace(/^File:\s*\S+\s*/i, '').trim();
+    return raw.length > 120 ? raw.slice(0, 117) + '...' : (raw || '⚠ Sin detalle');
   }
 
   function toggleErrGroup(key) { if(expandedGroups.has(key))expandedGroups.delete(key);else expandedGroups.add(key); renderList(); }
