@@ -953,50 +953,47 @@
     populateJiraModal();
   }
   function generateGroupDesc(errorKey, flows) {
-    // Parsear el error para extraer info útil para DevOps
+    // Limpiar el error — quitar HTML (ej: respuestas 504 con HTML embebido)
     var raw = errorKey.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 
-    // Extraer: Code, File, Line si existen
+    // Extraer campos técnicos para DevOps
     var codeMatch = raw.match(/Code:\s*(\d+)/i);
     var fileMatch = raw.match(/File:\s*(\S+\.php)/i);
     var lineMatch = raw.match(/\(Line\s*(\d+)\)/i);
     var httpMatch = raw.match(/\b(4\d{2}|5\d{2})\b/);
+    // Extraer mensaje limpio: lo que viene después del path del archivo
+    var msgMatch  = raw.match(/\.php(?:\(Line\s*\d+\))?\s+(.*)/i);
+    var cleanMsg  = msgMatch ? msgMatch[1].replace(/\s+/g,' ').trim() : '';
+    // Si cleanMsg incluye HTML del 504, cortarlo antes del primer tag
+    var htmlStart = cleanMsg.indexOf('<!');
+    if (htmlStart > 0) cleanMsg = cleanMsg.slice(0, htmlStart).trim();
+    if (!cleanMsg) cleanMsg = raw.slice(0, 200);
 
-    var errorSummary = [];
-    if (httpMatch)  errorSummary.push('HTTP ' + httpMatch[1]);
-    if (codeMatch)  errorSummary.push('Code: ' + codeMatch[1]);
-    if (fileMatch)  errorSummary.push('Archivo: ' + fileMatch[1].split('/').pop());
-    if (lineMatch)  errorSummary.push('Linea: ' + lineMatch[1]);
-    if (!errorSummary.length) errorSummary.push(raw.slice(0, 120));
+    var errorLines = [];
+    if (httpMatch)  errorLines.push('HTTP Status: ' + httpMatch[1]);
+    if (codeMatch)  errorLines.push('Code: ' + codeMatch[1]);
+    if (fileMatch)  errorLines.push('Archivo: ' + fileMatch[1]);
+    if (lineMatch)  errorLines.push('Linea: ' + lineMatch[1]);
+    if (cleanMsg)   errorLines.push('Mensaje: ' + cleanMsg);
 
-    // Extraer clientes
+    // Clientes reales
     var clients = new Set(flows.map(function(f) {
       var m = f.name.match(/\]\s*>\s*([^|>[\]]+?)\s*\|/);
       return m ? m[1].trim() : null;
     }).filter(Boolean));
 
-    // Construir el texto con doble newline entre CADA sección
-    // para forzar párrafos separados en Jira
     var out = [];
 
     out.push('ERROR EN ' + flows.length + ' FLOWS | ' + clients.size + ' CLIENTES');
-
-    out.push(
-      'RESUMEN DEL ERROR\n' +
-      errorSummary.join(' | ') + '\n' +
-      'Detalle completo: ' + raw.slice(0, 180)
-    );
-
+    out.push('RESUMEN DEL ERROR\n' + errorLines.join('\n'));
     out.push('FLOWS AFECTADOS (' + flows.length + ')');
 
-    // Cada flow como elemento separado con doble newline
     flows.forEach(function(f) {
       out.push('[' + f.id + '] ' + f.name + '\nhttps://flow.vecfleet.io/flows/' + f.id);
     });
 
     out.push('Generado por Flow Monitor - ' + new Date().toLocaleString('es-AR'));
 
-    // Unir TODO con doble newline — unico separador que Jira respeta en texto plano
     return out.join('\n\n');
   }
 
