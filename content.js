@@ -1056,14 +1056,14 @@
           var pp = procs[0].name.split('\\\\');
           processName = pp[pp.length-1] || '';
         }
-      } catch(e) { errorJson = raw.slice(jsonStart, jsonStart+800); }
+      } catch(e) { errorJson = raw.slice(jsonStart); }
     }
     if (!errorMsg) {
       var ap = raw.match(/\)\s+(.+)$/);
       var msg = ap ? ap[1].trim() : '';
       // Quitar status HTTP al inicio y frases duplicadas
       msg = msg.replace(/^\d{3}\s+/, '').replace(/\b(\w[\w ]{3,25})\s+\1\b/gi, '$1').trim();
-      errorMsg = msg || raw.slice(0,150);
+      errorMsg = msg || raw;
     }
     if (!processName && fileMatch) {
       var pp2 = fileMatch[1].match(/Processes\/([^\/]+)\/([^\/\.]+)\.php/i);
@@ -1115,7 +1115,7 @@
     var content = [];
     // 1. Panel de error — rojo
     // FIX 2: errorMsg sin duplicados — ya limpiado arriba
-    var errLabel = (httpCode ? 'HTTP '+httpCode+' ' : '') + errorMsg.split(' ').slice(0,5).join(' ');
+    var errLabel = (httpCode ? 'HTTP '+httpCode+' ' : '') + errorMsg;
     content.push(panel('error',[
       para(emoji('x'), txt(' '), bold('HTTP '+(httpCode||'?'))),
       para(txt(errorMsg||'Error desconocido')),
