@@ -415,31 +415,37 @@
       const batch = pending.slice(i, i + BATCH);
       await Promise.all(batch.map(async f => {
         try {
+          // Paso 1: obtener el executionId del HTML del flow
           const pageR = await fetch(`/flows/${f.id}`, { credentials: 'include' });
           const pageHtml = await pageR.text();
           const execM = pageHtml.match(/executions\/(\d+)\/download/);
           if (!execM) { f.errors = 'Sin detalle'; return; }
           f.executionId = execM[1];
-          const logR = await fetch(`/executions/${f.executionId}/download`, { credentials: 'include' });
-          if (!logR.ok) { f.errors = 'Sin detalle'; return; }
-          const logText = await logR.text();
-          const sepIdx = logText.lastIndexOf('=====');
-          const afterSep = sepIdx >= 0 ? logText.slice(sepIdx + 5).trim() : logText;
-          const jsonStart = afterSep.indexOf('{');
-          let raw = '';
-          if (jsonStart >= 0) {
-            try {
-              const data = JSON.parse(afterSep.slice(jsonStart));
-              const errs = (data.processes || []).map(p => (p.errors || '').trim()).filter(Boolean);
-              raw = errs.join(' | ').slice(0, 300);
-            } catch(e2) {}
+
+          // Paso 2: usar /details que devuelve el JSON completo sin truncar
+          const detR = await fetch(`/executions/${f.executionId}/details`, { credentials: 'include' });
+          if (!detR.ok) { f.errors = 'Sin detalle'; return; }
+          const det = await detR.json();
+
+          // Paso 3: extraer el error del pipeline
+          const procs = det.pipeline && det.pipeline.processes;
+          if (procs && procs.length > 0) {
+            const errProc = procs.find(p => p.errors && p.errors.trim()) || procs[0];
+            f.errors    = errProc.errors || 'Sin detalle';
+            f.errorsRaw = errProc.errors || '';
+            f.processName = errProc.name ? errProc.name.split('\\').pop() : '';
+          } else {
+            // Sin pipeline — usar el log de texto como fallback
+            const logR = await fetch(`/executions/${f.executionId}/download`, { credentials: 'include' });
+            if (logR.ok) {
+              const logText = await logR.text();
+              const ap = logText.match(/\)\s+(.+)$/m);
+              f.errors = ap ? ap[1].trim() : 'Sin detalle';
+              f.errorsRaw = f.errors;
+            } else {
+              f.errors = 'Sin detalle';
+            }
           }
-          if (!raw) {
-            const m = logText.match(/(?:Code:\s*\d+|Exception|ErrorException)[^\n]{5,200}/i);
-            raw = m ? m[0].trim() : '';
-          }
-          f.errors    = raw.slice(0, 300) || 'Sin detalle';
-          f.errorsRaw = raw;
         } catch(e) {
           f.errors = 'Sin detalle';
         } finally {
