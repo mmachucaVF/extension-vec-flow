@@ -767,21 +767,71 @@
 
   function cleanErrorLabel(raw) {
     if (!raw || raw === 'Sin detalle') return '⚠ Sin detalle';
-    var jsonStart = raw.indexOf('{');
-    if (jsonStart >= 0) {
-      try {
-        var obj = JSON.parse(raw.slice(jsonStart));
-        var d = Array.isArray(obj.detalle) ? obj.detalle[0] : null;
-        var msg = d ? (typeof d === 'string' ? d : (d.message || JSON.stringify(d))) : (obj.message || null);
-        if (msg) raw = String(msg);
-      } catch(e) {
-        raw = raw.slice(jsonStart);
+    
+    // Extraer componentes estructurales del error
+    var httpMatch = raw.match(/\b(4\d{2}|5\d{2})\b/);
+    var httpCode  = httpMatch ? httpMatch[1] : '';
+    var fileMatch = raw.match(/File:\s*(\S+\.php)/i);
+    var lineMatch = raw.match(/\(Line\s*(\d+)\)/i);
+    var fileName  = fileMatch ? fileMatch[1].split('/').pop() : '';
+    var lineNum   = lineMatch ? lineMatch[1] : '';
+    
+    // Intentar extraer el mensaje real del JSON embebido (línea 2)
+    var lines = raw.split('\n');
+    var msgClean = '';
+    
+    // Buscar la línea que contiene el JSON (empieza con {)
+    for (var i = 0; i < Math.min(lines.length, 5); i++) {
+      var line = lines[i].trim();
+      if (line.startsWith('{')) {
+        try {
+          var obj = JSON.parse(line);
+          var d = Array.isArray(obj.detalle) ? obj.detalle[0] : null;
+          var raw_msg = d ? (typeof d === 'string' ? d : (d.message || '')) : (obj.message || '');
+          // Normalizar: quitar valores variables (números, UUIDs, IPs, valores SQL)
+          msgClean = raw_msg
+            .replace(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g, '<IP>')     // IPs
+            .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '<UUID>') // UUIDs
+            .replace(/\b\d{4,}\b/g, '<N>')           // números largos (IDs)
+            .replace(/=\s*[\d.]+/g, '= <V>')          // valores en comparaciones SQL
+            .replace(/in\s*\([^)]+\)/gi, 'in (<V>)')  // IN (1,2,3)
+            .replace(/'[^']{8,}'/g, "'<V>'")             // strings largos en SQL
+            .trim();
+          break;
+        } catch(e) {
+          // JSON malformado — usar la línea sin valores
+          msgClean = line.slice(0, 100).replace(/\b\d{4,}\b/g, '<N>').trim();
+          break;
+        }
       }
     }
-    raw = raw.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-    raw = raw.replace(/^Code:\s*\d+\s*-?\s*/i, '').replace(/^File:\s*\S+\s*/i, '').trim();
-    return raw.length > 120 ? raw.slice(0, 117) + '...' : (raw || '⚠ Sin detalle');
+    
+    // Si no hay JSON, usar la primera línea limpia (sin "Code: 0 - File:")
+    if (!msgClean) {
+      var firstMeaningful = '';
+      for (var j = 0; j < lines.length; j++) {
+        var l = lines[j].trim();
+        if (l && !l.match(/^Code:\s*\d+/i) && !l.match(/^#\d+/) && !l.match(/^\/var\/www/)) {
+          firstMeaningful = l
+            .replace(/^\d{3}\s+/, '')                 // quitar HTTP code al inicio
+            .replace(/\b\d{4,}\b/g, '<N>')           // normalizar IDs
+            .replace(/=\s*[\d.]+/g, '= <V>')
+            .trim();
+          break;
+        }
+      }
+      msgClean = firstMeaningful || lines[0].slice(0, 100);
+    }
+    
+    // Key final: HTTP + mensaje normalizado + archivo:linea
+    // Esto garantiza que flows con el mismo error estructural se agrupen juntos
+    var key = (httpCode ? 'HTTP ' + httpCode + ' — ' : '') 
+            + msgClean 
+            + (fileName ? ' [' + fileName + (lineNum ? ':' + lineNum : '') + ']' : '');
+    
+    return key.trim() || '⚠ Error desconocido';
   }
+
 
   function renderAdfPreview(adf) {
     var preview = document.getElementById('fm-jira-desc-preview');
