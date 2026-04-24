@@ -820,7 +820,9 @@
           break;
         }
       }
-      msgClean = firstMeaningful || lines[0].slice(0, 100);
+      // Cortar stack trace inline antes de #0
+            if (firstMeaningful.indexOf(' #0 ') > 0) firstMeaningful = firstMeaningful.slice(0, firstMeaningful.indexOf(' #0 ')).trim();
+            msgClean = firstMeaningful || lines[0].replace(/ #0[\s\S]*$/, '').replace(/\b\d{4,}\b/g,'<N>').trim().slice(0, 150);
     }
     
     // Key final: HTTP + mensaje normalizado + archivo:linea
