@@ -1209,6 +1209,22 @@
 
   function getJiraCfg() { try{return JSON.parse(localStorage.getItem('fm_jira_config')||'{}');}catch(e){return {};} }
 
+
+  // Recorrer todos los elementos de flow en el DOM y agregar badges
+  function tlRefreshBadges() {
+    // Cada flow en el DOM tiene data-flow-id o está en un elemento con el ID como data-attribute
+    // Buscar todos los elementos que representan flows
+    var items = document.querySelectorAll('[data-flow-id]');
+    items.forEach(function(item) {
+      var flowId = item.getAttribute('data-flow-id');
+      var execId = item.getAttribute('data-exec-id') || '0';
+      if (!flowId) return;
+      // Buscar el contenedor para el badge (la fila del flow)
+      var badgeContainer = item.querySelector('.fm-tl-badge-wrap') || item;
+      tlRenderBadge(flowId, execId, badgeContainer);
+    });
+  }
+
   function renderList() {
     const flows=getFiltered(), container=document.getElementById('fm-list-content');
     if(!allFlows.length)return;
@@ -1217,6 +1233,8 @@
     else if(groupMode)renderGrouped(flows,container);
     else renderPaged(flows,container);
     updateSelBar();
+    // Mostrar badges de tickets vinculados
+    setTimeout(tlRefreshBadges, 100);
   }
 
   function renderPaged(flows,container) {
