@@ -1163,7 +1163,9 @@
     // Contexto
     content.push(rule());
     content.push(h3(emoji('wave'), txt(' Contexto')));
-    content.push(para(txt('Buenas Team, les compartimos el error detectado en el proceso '), bold(errorType), txt(' en '+clients.length+' entorno'+(clients.length!==1?'s':'')+':')));
+    var _fTypes=[...new Set(flows.map(function(f){var p=f.name.split('|');return p[p.length-1].trim().replace(/^\[GPS\]\s*>\s*/i,'').trim();}))].filter(Boolean);
+    var _fTypesStr=_fTypes.length>3?_fTypes.slice(0,3).join(', ')+' y otros':(_fTypes.join(', ')||errorType);
+    content.push(para(txt('Buenas Team, a continuacion el detalle del error registrado en el proceso '),bold(errorType),txt('. Los flows afectados son de tipo '),bold(_fTypesStr),txt(' e impactan a '+clients.length+' entorno'+(clients.length!==1?'s':'')+':')));
     content.push(blist(clients.map(function(c){ return txt(c); })));
     // Flows colapsables
     content.push(rule());
