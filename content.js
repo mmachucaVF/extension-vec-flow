@@ -1661,7 +1661,10 @@
     const adfDesc = (desc && typeof desc === 'object' && desc.type === 'doc') ? desc : {version:1,type:'doc',content:(desc||'').split('\n\n').filter(Boolean).map(p=>({type:'paragraph',content:[{type:'text',text:p.replace(/\n/g,' ')}]}))};    try{
       const data=await jiraFetch('/issue',{method:'POST',body:JSON.stringify({fields:{project:{key:projKey},issuetype:{id:typeId},summary:title,description:adfDesc,priority:{name:priority}}})});
       const cfg=getJiraConfig(),url=`${cfg.url.replace(/\/$/,'')}/browse/${data.key}`;
-      allFlows.filter(f=>selectedIds.has(f.id)).forEach(f=>{const all=JSON.parse(localStorage.getItem('fm_linked_tickets')||'{}');if(!all[f.id])all[f.id]=[];if(!all[f.id].find(t=>t.key===data.key))all[f.id].unshift({key:data.key,url,title,linkedAt:new Date().toISOString()});localStorage.setItem('fm_linked_tickets',JSON.stringify(all));});
+      // Auto-vincular flows al ticket creado usando el nuevo módulo tlSet
+      allFlows.filter(f=>selectedIds.has(f.id)).forEach(f=>{ tlSet(f.id, f.executionId||'0', data.key); });
+      // Actualizar badges en la lista
+      setTimeout(function(){ renderList(); }, 200);
       status.innerHTML=`✓ Ticket <a href="${url}" target="_blank" style="color:#6c63ff;font-weight:600">${data.key}</a> creado`;status.style.color='#3ecf82';btn.textContent='✓ Creado';
       setTimeout(()=>{closeJiraModal();btn.disabled=false;btn.textContent='Crear ticket →';},3000);
     }catch(e){status.textContent=`✕ Error: ${e.message}`;status.style.color='#f05050';btn.disabled=false;btn.textContent='Crear ticket →';}
