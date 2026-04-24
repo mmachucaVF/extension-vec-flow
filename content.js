@@ -1406,7 +1406,7 @@
       : '[Flow Monitor] ' + sel.length + ' flows — ' + (clients.length > 0 ? clients.length + ' cliente' + (clients.length !== 1 ? 's' : '') : new Date().toLocaleDateString('es-AR'));
 
     document.getElementById('fm-jira-title').value = title;
-    var _gdResult = errorKey ? await generateGroupDesc(errorKey, sel) : generateDesc(sel);
+    var _gdResult = errorKey ? await generateGroupDesc(errorKey, sel) : await generateDesc(sel);
         if (_gdResult && typeof _gdResult === 'object' && _gdResult.type === 'doc') {
           window._pendingAdf = _gdResult; setTimeout(function(){
       // Inyectar el preview div si no existe en el DOM
@@ -1598,21 +1598,14 @@
     return {version:1, type:'doc', content:content};
   }
 
-  function generateDesc(flows) {
-    const today=new Date().toLocaleString('es-AR');
-    const clients=[...new Set(flows.map(f=>{const m=f.name?.match(/>\s*([^|>]+?)\s*\|/);return m?m[1].trim():null;}).filter(Boolean))];
-    const fname=(()=>{const n=[...new Set(flows.map(f=>{const m=f.name?.match(/\|\s*(.+)$/);return m?m[1].trim():f.name;}))];return n.length===1?n[0]:`${n.length} flows`;})();
-    let d=`h2. 🚨 Flow con fallo: ${fname}\n*Generado:* ${today}\n`;
-    if(clients.length)d+=`*Clientes (${clients.length}):* ${clients.join(', ')}\n`;
-    d+=`\n----\n\n`;
-    const mainError=flows.find(f=>f.errors)?.errors||'';
-    if(mainError)d+=`h3. ❌ Error\n\n{code}\n${mainError}\n{code}\n\n----\n\n`;
-    d+=`h3. 📋 Flows afectados (${flows.length})\n\n||ID||Cliente||Flow||Último run||\n`;
-    for(const f of flows){const c=f.name?.match(/>\s*([^|>]+?)\s*\|/)?.[1]?.trim()||'—',fn=f.name?.match(/\|\s*(.+)$/)?.[1]?.trim()||f.name;d+=`|[#${f.id}|${BASE}/flows/${f.id}]|${c}|${fn}|${f.lastRun}|\n`;}
-    d+=`\n----\n\nh3. 🔗 Links\n\n`;
-    for(const f of flows)d+=`* [${f.name}|${BASE}/flows/${f.id}]\n`;
-    d+=`\n_Generado desde Flow Monitor Extension_`;
-    return d;
+  async function generateDesc(flows) {
+    if (!flows || !flows.length) return {version:1,type:'doc',content:[{type:'paragraph',content:[{type:'text',text:'Sin flows seleccionados.'}]}]};
+    // Si hay un solo flow con error, usar generateGroupDesc con su errorKey
+    // Si hay múltiples flows sin agrupar, usar el primer flow con error
+    var errFlow = flows.find(function(f){ return f.errors && f.errors !== 'Sin detalle'; }) || flows[0];
+    var errorKey = errFlow ? (errFlow.errors || 'Sin detalle') : 'Sin detalle';
+    // Delegar a generateGroupDesc — mismo formato rico para individual y grupal
+    return await generateGroupDesc(errorKey, flows);
   }
 
   function closeJiraModal(){document.getElementById('fm-modal-overlay').classList.remove('fm-visible');}
