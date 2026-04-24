@@ -1129,9 +1129,45 @@
       ? 'El mismo error se registra en ' + clients.length + ' entornos distintos (' + clients.slice(0,3).join(', ') + (clients.length > 3 ? ' y otros' : '') + '), todos con el mismo punto de fallo'
       : 'El error se concentra en el entorno ' + (clients[0] || '');
     var patronLoc = (fileName ? ' (' + fileName + (lineNum ? ':' + lineNum : '') + ')' : '') + '.';
-    // Análisis generado por IA
-    var analisis = (await generateAIAnalysis(errorSummary, httpCode, processName, fileName, lineNum, clients, flows.length)) || (multi ? 'El mismo error se registra en '+clients.length+' entornos distintos ('+clients.slice(0,3).join(', ')+(clients.length>3?' y otros':'')+'), todos con el mismo punto de fallo ('+(fileName||'')+(lineNum?':'+lineNum:'')+').' : 'El error se concentra en el entorno '+(clients[0]||'')+'.');
-    var txt=function(t,m){var n={type:'text',text:String(t)};if(m)n.marks=m;return n;};
+    // Análisis contextual basado en los datos reales del error
+        var _multi = clients.length > 1;
+        var _scope = _multi
+          ? 'afecta a ' + clients.length + ' entornos simultáneamente (' + clients.slice(0,3).join(', ') + (clients.length > 3 ? ' y ' + (clients.length-3) + ' más' : '') + ')'
+          : 'afecta al entorno ' + (clients[0] || '');
+        // Tipo de flow — parte después del último |
+        var _fTypes = [...new Set(flows.map(function(f){
+          var p = f.name.split('|'); return p[p.length-1].trim().replace(/^\[GPS\]\s*>\s*/i,'').trim();
+        }))].filter(Boolean);
+        var _opName = _fTypes.length ? _fTypes.slice(0,2).join(' / ') : (processName || 'el proceso');
+        // Construir análisis específico según tipo de error
+        var analisis = '';
+        if (errorSummary.match(/SQLSTATE|Column not found|Table.*doesn|Unknown column/i)) {
+          var _col = errorSummary.match(/Unknown column '([^']+)'/)?.[1] || '';
+          var _tbl = errorSummary.match(/from [`'"]?(\w+)[`'"]?\s+where/i)?.[1] || '';
+          analisis = 'El proceso ' + (processName||'') + ' falla al ejecutar ' + _opName + ' con un error de esquema de base de datos'
+            + (_col ? ' — la columna \'' + _col + '\' no existe' : '')
+            + (_tbl ? ' en la tabla \'' + _tbl + '\'' : '')
+            + '. ' + (_multi ? 'Al ' + _scope + ', se descarta un problema puntual de datos y apunta a una migración pendiente o un cambio de esquema no aplicado en producción.' : 'Verificar si hay migraciones pendientes en el entorno afectado.');
+        } else if (errorSummary.match(/Gateway Timeout|504|upstream|timed out/i)) {
+          analisis = 'El proceso ' + (processName||'') + ' no recibe respuesta del servicio externo al ejecutar ' + _opName
+            + (lineNum ? ' (línea ' + lineNum + ' de ' + fileName + ')' : '')
+            + '. ' + (_multi ? 'Al ' + _scope + ', no parece un problema de configuración por tenant sino una degradación o caída del servicio externo.' : 'Verificar disponibilidad del endpoint en el entorno ' + (clients[0]||'') + '.');
+        } else if (errorSummary.match(/401|403|Unauthorized|Forbidden|token|credential/i)) {
+          analisis = 'El proceso ' + (processName||'') + ' recibe un error de autenticación al ejecutar ' + _opName
+            + '. ' + (_multi ? 'Al ' + _scope + ', podría indicar que las credenciales o tokens de acceso vencieron o fueron revocados a nivel global.' : 'Verificar credenciales configuradas para el entorno ' + (clients[0]||'') + '.');
+        } else if (errorSummary.match(/Connection refused|ECONNREFUSED|connect ETIMEDOUT/i)) {
+          analisis = 'El proceso ' + (processName||'') + ' no puede establecer conexión al ejecutar ' + _opName
+            + '. ' + (_multi ? 'Al ' + _scope + ', apunta a una caída o inaccesibilidad del servicio de destino.' : 'Verificar conectividad en ' + (clients[0]||'') + '.');
+        } else if (httpCode >= 500) {
+          analisis = 'El proceso ' + (processName||'') + ' recibe un error interno del servidor (HTTP ' + httpCode + ') al ejecutar ' + _opName
+            + (fileName ? ' en ' + fileName + (lineNum?':'+lineNum:'') : '')
+            + '. ' + (_multi ? 'Al ' + _scope + ', el problema no es aislado.' : '');
+        } else {
+          analisis = 'El proceso ' + (processName||'') + ' falla al ejecutar ' + _opName
+            + (fileName ? ' en ' + fileName + (lineNum?':'+lineNum:'') : '')
+            + '. ' + (_multi ? 'El error ' + _scope + '.' : 'Afecta al entorno ' + (clients[0]||'') + '.');
+        }
+        var txt=function(t,m){var n={type:'text',text:String(t)};if(m)n.marks=m;return n;};
     var bold=function(t){return txt(t,[{type:'strong'}]);};
     var para=function(){return{type:'paragraph',content:[].slice.call(arguments)};};
     var h3=function(){return{type:'heading',attrs:{level:3},content:[].slice.call(arguments)};};
@@ -1163,9 +1199,7 @@
     // Contexto
     content.push(rule());
     content.push(h3(emoji('wave'), txt(' Contexto')));
-    var _fTypes=[...new Set(flows.map(function(f){var p=f.name.split('|');return p[p.length-1].trim().replace(/^\[GPS\]\s*>\s*/i,'').trim();}))].filter(Boolean);
-    var _fTypesStr=_fTypes.length>3?_fTypes.slice(0,3).join(', ')+' y otros':(_fTypes.join(', ')||errorType);
-    content.push(para(txt('Buenas Team, a continuacion el detalle del error registrado en el proceso '),bold(errorType),txt('. Los flows afectados son de tipo '),bold(_fTypesStr),txt(' e impactan a '+clients.length+' entorno'+(clients.length!==1?'s':'')+':')));
+    content.push(para(txt('Buenas Team, les compartimos el error detectado en el proceso '), bold(errorType), txt(' en '+clients.length+' entorno'+(clients.length!==1?'s':'')+':')));
     content.push(blist(clients.map(function(c){ return txt(c); })));
     // Flows colapsables
     content.push(rule());
