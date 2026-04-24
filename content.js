@@ -1138,9 +1138,6 @@
   }
 
   async function tlRenderBadge(flowId, execId, container) {
-    // Preferir el slot específico si existe
-    var slot = container && container.querySelector ? container.querySelector('.fm-tl-slot') : null;
-    if (slot) container = slot;
     if(!container) return;
     container.querySelectorAll('.fm-tl-badge,.fm-tl-link-btn').forEach(function(e){e.remove();});
     var rec=tlGet(flowId, execId);
@@ -1210,22 +1207,21 @@
     el.onclick=function(e){if(e.target===el)el.remove();};
   }
 
-  function getJiraCfg() { try{return JSON.parse(localStorage.getItem('fm_jira_config')||'{}');}catch(e){return {};} }
+  function getJiraCfg() { try{return JSON.parse(localStorage.getItem('fm_jira_cfg')||localStorage.getItem('fm_jira_config')||'{}');}catch(e){return {};} }
 
 
   // Recorrer todos los elementos de flow en el DOM y agregar badges
   function tlRefreshBadges() {
-    // Buscar todos los items de flow en el DOM por data-id
-    var items = document.querySelectorAll('[data-id][data-action="row-click"]');
+    // Cada flow en el DOM tiene data-flow-id o está en un elemento con el ID como data-attribute
+    // Buscar todos los elementos que representan flows
+    var items = document.querySelectorAll('[data-flow-id]');
     items.forEach(function(item) {
-      var flowId = item.getAttribute('data-id');
+      var flowId = item.getAttribute('data-flow-id');
+      var execId = item.getAttribute('data-exec-id') || '0';
       if (!flowId) return;
-      // Buscar el flow en allFlows para obtener el executionId
-      var flow = (typeof allFlows !== 'undefined' ? allFlows : []).find(function(f){ return String(f.id) === String(flowId); });
-      var execId = flow ? (flow.executionId || '0') : '0';
-      // Buscar la zona de acciones del item para colocar el badge
-      var actionsZone = item.querySelector('.fm-actions') || item.querySelector('.fm-row-actions') || item;
-      tlRenderBadge(flowId, execId, actionsZone);
+      // Buscar el contenedor para el badge (la fila del flow)
+      var badgeContainer = item.querySelector('.fm-tl-badge-wrap') || item;
+      tlRenderBadge(flowId, execId, badgeContainer);
     });
   }
 
