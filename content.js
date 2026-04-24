@@ -1212,16 +1212,15 @@
 
   // Recorrer todos los elementos de flow en el DOM y agregar badges
   function tlRefreshBadges() {
-    // Cada flow en el DOM tiene data-flow-id o está en un elemento con el ID como data-attribute
-    // Buscar todos los elementos que representan flows
-    var items = document.querySelectorAll('[data-flow-id]');
+    var items = document.querySelectorAll('[data-id][data-action="row-click"]');
     items.forEach(function(item) {
-      var flowId = item.getAttribute('data-flow-id');
-      var execId = item.getAttribute('data-exec-id') || '0';
+      var flowId = item.getAttribute('data-id');
       if (!flowId) return;
-      // Buscar el contenedor para el badge (la fila del flow)
-      var badgeContainer = item.querySelector('.fm-tl-badge-wrap') || item;
-      tlRenderBadge(flowId, execId, badgeContainer);
+      var flow = (typeof allFlows !== 'undefined' ? allFlows : []).find(function(f){ return String(f.id) === String(flowId); });
+      var execId = flow ? (flow.executionId || '0') : '0';
+      // Usar fm-meta como zona del badge, o el item completo como fallback
+      var zone = item.querySelector('.fm-meta') || item.querySelector('.fm-actions') || item;
+      tlRenderBadge(flowId, execId, zone);
     });
   }
 
