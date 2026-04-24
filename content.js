@@ -1052,6 +1052,163 @@
     return `<span onclick="openLinkModal('${flowId}',${JSON.stringify(ticket).replace(/"/g,'&quot;')})" title="Click para gestionar vínculo" style="cursor:pointer;font-size:10px;color:${color};background:rgba(255,255,255,.05);border:1px solid ${color}44;border-radius:4px;padding:2px 6px;margin-left:6px">🎫 ${ticket.key} · ${ticket.status}</span>`;
   }
 
+
+  // ═══════════════════════════════════════════════════════════
+  // TICKET LINK MODULE — Vinculación de tickets Jira a flows
+  // Clave storage: "tl:{flowId}:{execId}" → {ticket, linkedAt}
+  // ═══════════════════════════════════════════════════════════
+  function tlKey(flowId, execId) { return 'tl:' + flowId + ':' + (execId||'0'); }
+  function tlGet(flowId, execId) { try { var raw=localStorage.getItem(tlKey(flowId,execId)); return raw?JSON.parse(raw):null; } catch(e){return null;} }
+  function tlSet(flowId, execId, ticketKey) { try { localStorage.setItem(tlKey(flowId,execId), JSON.stringify({ticket:ticketKey,linkedAt:Date.now()})); } catch(e){} }
+  function tlRemove(flowId, execId) { try { localStorage.removeItem(tlKey(flowId,execId)); } catch(e){} }
+
+  var _tlCache = {};
+  async function tlStatus(ticketKey) {
+    var now = Date.now();
+    if (_tlCache[ticketKey] && now - _tlCache[ticketKey].ts < 5*60*1000) return _tlCache[ticketKey].data;
+    try {
+      var data = await jiraReq('/issue/' + ticketKey + '?fields=status,summary', 'GET');
+      if (!data||!data.fields) return null;
+      var cat = ((data.fields.status||{}).statusCategory||{}).key||'new';
+      var result = { key:ticketKey, statusName:(data.fields.status||{}).name||'', statusCat:cat, summary:(data.fields.summary||'').slice(0,80) };
+      _tlCache[ticketKey] = { ts:now, data:result };
+      return result;
+    } catch(e){ return null; }
+  }
+
+  function tlColor(cat) { return cat==='done'?'#36b37e':cat==='indeterminate'?'#0052cc':'#7c8494'; }
+  function tlIcon(cat)  { return cat==='done'?'✓':cat==='indeterminate'?'⟳':'○'; }
+
+  async function tlAutoClean() {
+    try {
+      var keys=[]; for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);if(k&&k.startsWith('tl:'))keys.push(k);}
+      var week=7*24*60*60*1000;
+      for(var j=0;j<keys.length;j++){
+        var rec=JSON.parse(localStorage.getItem(keys[j])||'null');
+        if(!rec||!rec.ticket||Date.now()-rec.linkedAt<week) continue;
+        var st=await tlStatus(rec.ticket);
+        if(st&&st.statusCat==='done') localStorage.removeItem(keys[j]);
+      }
+    } catch(e){}
+  }
+
+  async function tlCheckDupes(flows) {
+    var dupes=[];
+    for(var i=0;i<flows.length;i++){
+      var f=flows[i], rec=tlGet(f.id, f.executionId||'0');
+      if(!rec||!rec.ticket) continue;
+      var st=await tlStatus(rec.ticket);
+      if(st&&st.statusCat==='done'){ tlRemove(f.id,f.executionId||'0'); continue; }
+      dupes.push({flow:f, ticket:rec.ticket, status:st});
+    }
+    return dupes;
+  }
+
+  function tlDupeModal(dupes, onOk, onCancel) {
+    var cfg=getJiraCfg(), base=cfg.url?cfg.url.replace(/\/$/, ''):'';
+    var rows=dupes.slice(0,5).map(function(d){
+      var col=tlColor(d.status?d.status.statusCat:'new'), icon=tlIcon(d.status?d.status.statusCat:'new');
+      var fname=d.flow.name.split('|').pop().trim().replace(/^\[GPS\]\s*>\s*/i,'').slice(0,38);
+      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.06)">'
+        +'<span style="font-size:12px;color:#c8ccd4">'+fname+'</span>'
+        +'<a href="'+base+'/browse/'+d.ticket+'" target="_blank" onclick="event.stopPropagation()" style="display:inline-flex;align-items:center;gap:5px;background:'+col+'18;border:1px solid '+col+'40;border-radius:20px;padding:3px 10px;text-decoration:none;font-size:11px;font-weight:600;color:'+col+'">'
+        +'<span>'+icon+'</span><span>'+d.ticket+'</span>'
+        +(d.status?'<span style="color:#7c8494;font-weight:400">·&nbsp;'+d.status.statusName+'</span>':'')
+        +'</a></div>';
+    }).join('')+(dupes.length>5?'<div style="font-size:10px;color:#7c8494;margin-top:6px">...y '+(dupes.length-5)+' más</div>':'');
+    var el=document.createElement('div');
+    el.id='fm-tl-dupe-overlay';
+    el.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:10010;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)';
+    el.innerHTML='<div style="background:#16181f;border:1px solid rgba(255,165,0,.25);border-radius:14px;padding:26px 28px;width:460px;max-width:92vw;box-shadow:0 24px 60px rgba(0,0,0,.7)">'
+      +'<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">'
+      +'<div style="background:rgba(255,165,0,.15);border-radius:10px;padding:10px;font-size:22px;line-height:1">⚠️</div>'
+      +'<div><div style="font-size:15px;font-weight:700;color:#e0e4ed">Tickets ya vinculados</div>'
+      +'<div style="font-size:12px;color:#7c8494;margin-top:3px">'+dupes.length+' flow'+(dupes.length>1?'s tienen':'tiene')+' un ticket activo para este error</div>'
+      +'</div></div>'
+      +'<div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:10px;padding:12px 14px;margin-bottom:16px">'+rows+'</div>'
+      +'<div style="font-size:12px;color:#7c8494;margin-bottom:16px">¿Querés crear un ticket nuevo de todas formas?</div>'
+      +'<div style="display:flex;gap:10px;justify-content:flex-end">'
+      +'<button id="fm-tl-dupe-cancel" style="padding:8px 20px;border-radius:8px;border:1px solid rgba(255,255,255,.15);background:transparent;color:#c8ccd4;font-size:13px;cursor:pointer">Cancelar</button>'
+      +'<button id="fm-tl-dupe-ok" style="padding:8px 20px;border-radius:8px;border:none;background:#6c63ff;color:#fff;font-size:13px;font-weight:600;cursor:pointer">Crear igual</button>'
+      +'</div></div>';
+    document.body.appendChild(el);
+    document.getElementById('fm-tl-dupe-cancel').onclick=function(){el.remove();if(onCancel)onCancel();};
+    document.getElementById('fm-tl-dupe-ok').onclick=function(){el.remove();if(onOk)onOk();};
+    el.onclick=function(e){if(e.target===el){el.remove();if(onCancel)onCancel();}};
+  }
+
+  async function tlRenderBadge(flowId, execId, container) {
+    if(!container) return;
+    container.querySelectorAll('.fm-tl-badge,.fm-tl-link-btn').forEach(function(e){e.remove();});
+    var rec=tlGet(flowId, execId);
+    if(!rec||!rec.ticket){
+      var btn=document.createElement('button');
+      btn.className='fm-tl-link-btn';
+      btn.style.cssText='background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:3px 8px;font-size:10px;color:#7c8494;cursor:pointer;margin-left:6px;transition:all .15s;vertical-align:middle';
+      btn.title='Vincular ticket de Jira';
+      btn.innerHTML='🎫 <span style="font-size:10px;opacity:.7">+</span>';
+      btn.onmouseover=function(){this.style.background='rgba(108,99,255,.2)';this.style.borderColor='rgba(108,99,255,.5)';this.style.color='#a09cf7';};
+      btn.onmouseout=function(){this.style.background='rgba(255,255,255,.05)';this.style.borderColor='rgba(255,255,255,.1)';this.style.color='#7c8494';};
+      btn.onclick=function(e){e.stopPropagation();tlManualModal(flowId,execId,container);};
+      container.appendChild(btn);
+      return;
+    }
+    var st=await tlStatus(rec.ticket);
+    var col=tlColor(st?st.statusCat:'new'), icon=tlIcon(st?st.statusCat:'new');
+    var sName=st?st.statusName:'...';
+    var cfg=getJiraCfg(), base=cfg.url?cfg.url.replace(/\/$/, ''):'';
+    var badge=document.createElement('span');
+    badge.className='fm-tl-badge';
+    badge.style.cssText='display:inline-flex;align-items:center;gap:5px;background:'+col+'16;border:1px solid '+col+'35;border-radius:20px;padding:3px 10px 3px 8px;font-size:11px;margin-left:6px;cursor:default;transition:background .15s;vertical-align:middle';
+    badge.innerHTML='<span style="color:'+col+';font-size:10px;font-weight:700">'+icon+'</span>'
+      +'<a href="'+base+'/browse/'+rec.ticket+'" target="_blank" onclick="event.stopPropagation()" style="color:'+col+';font-weight:700;text-decoration:none;font-size:11px">'+rec.ticket+'</a>'
+      +'<span style="color:#7c8494;font-size:10px">·&nbsp;'+sName+'</span>'
+      +'<span class="fm-tl-unlink" style="color:#7c8494;font-size:12px;margin-left:3px;opacity:0;transition:opacity .15s;cursor:pointer;line-height:1" title="Desvincular">×</span>';
+    badge.onmouseover=function(){this.style.background=col+'28';this.querySelector('.fm-tl-unlink').style.opacity='1';};
+    badge.onmouseout=function(){this.style.background=col+'16';this.querySelector('.fm-tl-unlink').style.opacity='0';};
+    badge.querySelector('.fm-tl-unlink').onclick=function(e){
+      e.stopPropagation();e.preventDefault();
+      tlRemove(flowId,execId);
+      tlRenderBadge(flowId,execId,container);
+    };
+    container.appendChild(badge);
+  }
+
+  function tlManualModal(flowId, execId, container) {
+    var el=document.createElement('div');
+    el.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:10010;display:flex;align-items:center;justify-content:center';
+    el.innerHTML='<div style="background:#16181f;border:1px solid rgba(108,99,255,.3);border-radius:14px;padding:24px 26px;width:330px;box-shadow:0 20px 60px rgba(0,0,0,.7)">'
+      +'<div style="font-size:14px;font-weight:700;color:#e0e4ed;margin-bottom:5px">🎫 Vincular ticket</div>'
+      +'<div style="font-size:11px;color:#7c8494;margin-bottom:14px">Ingresá el número del ticket</div>'
+      +'<input id="fm-tl-input" placeholder="Ej: OPS-123 o GS-456" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);border-radius:8px;padding:9px 13px;font-size:13px;color:#e0e4ed;outline:none;transition:border .15s" />'
+      +'<div id="fm-tl-msg" style="font-size:11px;min-height:18px;margin-top:7px;color:#7c8494"></div>'
+      +'<div style="display:flex;gap:9px;justify-content:flex-end;margin-top:14px">'
+      +'<button id="fm-tl-cancel" style="padding:8px 18px;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:transparent;color:#c8ccd4;font-size:12px;cursor:pointer">Cancelar</button>'
+      +'<button id="fm-tl-save" style="padding:8px 18px;border-radius:8px;border:none;background:#6c63ff;color:#fff;font-size:12px;font-weight:700;cursor:pointer">Vincular</button>'
+      +'</div></div>';
+    document.body.appendChild(el);
+    var inp=document.getElementById('fm-tl-input'), msg=document.getElementById('fm-tl-msg');
+    setTimeout(function(){inp.focus();},50);
+    inp.onfocus=function(){this.style.borderColor='rgba(108,99,255,.6)';};
+    inp.onblur=function(){this.style.borderColor='rgba(255,255,255,.15)';};
+    document.getElementById('fm-tl-cancel').onclick=function(){el.remove();};
+    document.getElementById('fm-tl-save').onclick=async function(){
+      var val=inp.value.trim().toUpperCase();
+      if(!val.match(/^[A-Z]+-\d+$/)){msg.style.color='#ff5630';msg.textContent='Formato inválido. Ej: OPS-123';return;}
+      msg.style.color='#7c8494';msg.textContent='Verificando...';
+      var st=await tlStatus(val);
+      if(!st){msg.style.color='#ff5630';msg.textContent='Ticket no encontrado o sin acceso';return;}
+      if(st.statusCat==='done'){msg.style.color='#ff8b00';msg.textContent='El ticket '+val+' ya está finalizado';return;}
+      tlSet(flowId,execId,val);
+      el.remove();
+      tlRenderBadge(flowId,execId,container);
+    };
+    inp.onkeydown=function(e){if(e.key==='Enter')document.getElementById('fm-tl-save').click();};
+    el.onclick=function(e){if(e.target===el)el.remove();};
+  }
+
+  function getJiraCfg() { try{return JSON.parse(localStorage.getItem('fm_jira_config')||'{}');}catch(e){return {};} }
+
   function renderList() {
     const flows=getFiltered(), container=document.getElementById('fm-list-content');
     if(!allFlows.length)return;
