@@ -905,25 +905,7 @@
     } catch(e) { return null; }
   }
 
-  // Buscar ticket vinculado a un flow por label
-  async function findLinkedTicket(flowId) {
-    const lbl = flowLabel(flowId);
-    const data = await jiraReq('/rest/api/3/issue/picker?query=labels%3D%22' + lbl + '%22&currentProjectId=', 'GET');
-    // Usar JQL search para buscar por label
-    const jql = encodeURIComponent('labels = "' + lbl + '" ORDER BY created DESC');
-    const res = await jiraReq('/rest/api/3/search?jql=' + jql + '&fields=summary,status,resolutiondate&maxResults=1', 'GET');
-    if (!res || !res.issues || !res.issues.length) return null;
-    const issue = res.issues[0];
-    return {
-      key: issue.key,
-      summary: issue.fields.summary,
-      status: issue.fields.status.name,
-      statusCategory: issue.fields.status.statusCategory.name,
-      resolutionDate: issue.fields.resolutiondate
-    };
-  }
 
-  // Vincular ticket a un flow (agrega label al ticket)
   async function linkTicketToFlow(ticketKey, flowId) {
     const lbl = flowLabel(flowId);
     // Leer labels actuales
@@ -978,8 +960,6 @@
   // Cargar ticket vinculado para un flow
   async function loadLinkedTicket(f) {
     if (f.linkedTicketLoaded) return;
-    f.linkedTicketLoaded = true;
-    f.linkedTicket = await findLinkedTicket(f.id);
   }
 
   // Modal de vinculación manual
