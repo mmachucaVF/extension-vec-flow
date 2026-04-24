@@ -882,6 +882,176 @@
       return c;
     }).join('');
   }
+
+  // ── Sistema de vínculos flow ↔ ticket Jira ──────────────────────────
+
+  function getJiraCfg() {
+    try { return JSON.parse(localStorage.getItem('fm_jira_cfg')||'{}'); } catch(e) { return {}; }
+  }
+
+  function flowLabel(flowId) { return 'flow-' + flowId; }
+
+  async function jiraReq(path, method, body) {
+    const cfg = getJiraCfg();
+    if (!cfg.url || !cfg.email || !cfg.token) return null;
+    const base = cfg.url.replace(/\/$/, '');
+    const auth = btoa(cfg.email + ':' + cfg.token);
+    const opts = { method: method||'GET', headers: { 'Authorization': 'Basic '+auth, 'Accept': 'application/json', 'Content-Type': 'application/json' } };
+    if (body) opts.body = JSON.stringify(body);
+    try {
+      const res = await fetch(base + path, opts);
+      if (res.status === 204) return { ok: true };
+      return await res.json();
+    } catch(e) { return null; }
+  }
+
+  // Buscar ticket vinculado a un flow por label
+  async function findLinkedTicket(flowId) {
+    const lbl = flowLabel(flowId);
+    const data = await jiraReq('/rest/api/3/issue/picker?query=labels%3D%22' + lbl + '%22&currentProjectId=', 'GET');
+    // Usar JQL search para buscar por label
+    const jql = encodeURIComponent('labels = "' + lbl + '" ORDER BY created DESC');
+    const res = await jiraReq('/rest/api/3/search?jql=' + jql + '&fields=summary,status,resolutiondate&maxResults=1', 'GET');
+    if (!res || !res.issues || !res.issues.length) return null;
+    const issue = res.issues[0];
+    return {
+      key: issue.key,
+      summary: issue.fields.summary,
+      status: issue.fields.status.name,
+      statusCategory: issue.fields.status.statusCategory.name,
+      resolutionDate: issue.fields.resolutiondate
+    };
+  }
+
+  // Vincular ticket a un flow (agrega label al ticket)
+  async function linkTicketToFlow(ticketKey, flowId) {
+    const lbl = flowLabel(flowId);
+    // Leer labels actuales
+    const issue = await jiraReq('/rest/api/3/issue/' + ticketKey + '?fields=labels', 'GET');
+    if (!issue || !issue.fields) return false;
+    const labels = issue.fields.labels || [];
+    if (labels.includes(lbl)) return true; // ya vinculado
+    const res = await jiraReq('/rest/api/3/issue/' + ticketKey, 'PUT', { fields: { labels: [...labels, lbl] } });
+    return res && (res.ok || res.id);
+  }
+
+  // Desvincular ticket de un flow (quita el label)
+  async function unlinkTicketFromFlow(ticketKey, flowId) {
+    const lbl = flowLabel(flowId);
+    const issue = await jiraReq('/rest/api/3/issue/' + ticketKey + '?fields=labels', 'GET');
+    if (!issue || !issue.fields) return false;
+    const labels = (issue.fields.labels || []).filter(l => l !== lbl);
+    const res = await jiraReq('/rest/api/3/issue/' + ticketKey, 'PUT', { fields: { labels } });
+    return res && (res.ok || res.id);
+  }
+
+  // Vincular ticket a múltiples flows (para grupos)
+  async function linkTicketToFlows(ticketKey, flowIds) {
+    // Leer labels actuales UNA vez
+    const issue = await jiraReq('/rest/api/3/issue/' + ticketKey + '?fields=labels', 'GET');
+    if (!issue || !issue.fields) return false;
+    const existing = issue.fields.labels || [];
+    const toAdd = flowIds.map(flowLabel).filter(l => !existing.includes(l));
+    if (!toAdd.length) return true;
+    const res = await jiraReq('/rest/api/3/issue/' + ticketKey, 'PUT', { fields: { labels: [...existing, ...toAdd] } });
+    return res && (res.ok || res.id);
+  }
+
+  // Chequear y limpiar tickets Done > 7 días (se corre al cargar)
+  async function autoCleanExpiredLinks(flows) {
+    const now = Date.now();
+    const sevenDays = 7 * 24 * 60 * 60 * 1000;
+    const errFlows = flows.filter(f => f.status === 'error' && f.linkedTicket);
+    for (const f of errFlows) {
+      const t = f.linkedTicket;
+      if (t.statusCategory === 'Done' && t.resolutionDate) {
+        const resolvedAt = new Date(t.resolutionDate).getTime();
+        if ((now - resolvedAt) > sevenDays) {
+          await unlinkTicketFromFlow(t.key, f.id);
+          f.linkedTicket = null;
+          f.linkedTicketLoaded = false;
+        }
+      }
+    }
+  }
+
+  // Cargar ticket vinculado para un flow
+  async function loadLinkedTicket(f) {
+    if (f.linkedTicketLoaded) return;
+    f.linkedTicketLoaded = true;
+    f.linkedTicket = await findLinkedTicket(f.id);
+  }
+
+  // Modal de vinculación manual
+  function openLinkModal(flowId, currentTicket) {
+    const existing = document.getElementById('fm-link-modal');
+    if (existing) existing.remove();
+    const modal = document.createElement('div');
+    modal.id = 'fm-link-modal';
+    modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.7);z-index:100001;display:flex;align-items:center;justify-content:center';
+    modal.innerHTML = `
+      <div style="background:#1a1d23;border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:24px;width:380px;font-family:sans-serif">
+        <div style="font-size:14px;font-weight:600;color:#e0e4ed;margin-bottom:16px">🔗 Vincular ticket al flow #${flowId}</div>
+        ${currentTicket ? `<div style="font-size:11px;color:#7c8494;margin-bottom:12px">Ticket actual: <span style="color:#6c63ff">${currentTicket.key}</span> — ${currentTicket.status}</div>` : ''}
+        <div style="font-size:11px;color:#7c8494;margin-bottom:6px">Número de ticket (ej: OPS-1234 o GS-567)</div>
+        <input id="fm-link-input" type="text" placeholder="OPS-1234" value="${currentTicket ? currentTicket.key : ''}"
+          style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);border-radius:6px;padding:8px 10px;color:#e0e4ed;font-size:13px;outline:none;margin-bottom:16px">
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          ${currentTicket ? `<button onclick="unlinkFlow('${flowId}','${currentTicket.key}')" style="background:rgba(255,59,48,.15);border:1px solid rgba(255,59,48,.3);color:#ff3b30;padding:7px 14px;border-radius:6px;cursor:pointer;font-size:12px">Desvincular</button>` : ''}
+          <button onclick="document.getElementById('fm-link-modal').remove()" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);color:#7c8494;padding:7px 14px;border-radius:6px;cursor:pointer;font-size:12px">Cancelar</button>
+          <button onclick="saveLinkManual('${flowId}')" style="background:#6c63ff;border:none;color:#fff;padding:7px 14px;border-radius:6px;cursor:pointer;font-size:12px">Vincular</button>
+        </div>
+        <div id="fm-link-msg" style="font-size:11px;color:#7c8494;margin-top:10px;min-height:16px"></div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    document.getElementById('fm-link-input').focus();
+  }
+
+  async function saveLinkManual(flowId) {
+    const val = (document.getElementById('fm-link-input')?.value||'').trim().toUpperCase();
+    const msg = document.getElementById('fm-link-msg');
+    if (!val) { if(msg) msg.textContent = 'Ingresá un número de ticket'; return; }
+    if (msg) msg.textContent = 'Vinculando...';
+    const ok = await linkTicketToFlow(val, flowId);
+    if (ok) {
+      if (msg) msg.style.color = '#34c759';
+      if (msg) msg.textContent = '✓ Ticket vinculado correctamente';
+      // Actualizar el flow en memoria
+      const f = allFlows.find(x => String(x.id) === String(flowId));
+      if (f) { f.linkedTicketLoaded = false; await loadLinkedTicket(f); }
+      setTimeout(() => { document.getElementById('fm-link-modal')?.remove(); renderList(); }, 1000);
+    } else {
+      if (msg) msg.style.color = '#ff3b30';
+      if (msg) msg.textContent = '✗ Error — verificá el número de ticket';
+    }
+  }
+
+  async function unlinkFlow(flowId, ticketKey) {
+    const msg = document.getElementById('fm-link-msg');
+    if (msg) msg.textContent = 'Desvinculando...';
+    const ok = await unlinkTicketFromFlow(ticketKey, flowId);
+    if (ok) {
+      const f = allFlows.find(x => String(x.id) === String(flowId));
+      if (f) { f.linkedTicket = null; f.linkedTicketLoaded = true; }
+      document.getElementById('fm-link-modal')?.remove();
+      renderList();
+    } else {
+      if (msg) msg.style.color = '#ff3b30';
+      if (msg) msg.textContent = '✗ Error al desvincular';
+    }
+  }
+
+  // Badge HTML de ticket vinculado
+  function ticketBadgeHtml(ticket, flowId) {
+    if (!ticket) {
+      return `<span onclick="openLinkModal('${flowId}',null)" title="Vincular ticket" style="cursor:pointer;font-size:10px;color:#7c8494;background:rgba(255,255,255,.05);border:1px dashed rgba(255,255,255,.1);border-radius:4px;padding:2px 6px;margin-left:6px">🔗 vincular</span>`;
+    }
+    const colors = { 'To Do':'#7c8494', 'In Progress':'#f0a500', 'Done':'#34c759', 'Closed':'#34c759', 'Resolved':'#34c759' };
+    const color = colors[ticket.status] || '#7c8494';
+    return `<span onclick="openLinkModal('${flowId}',${JSON.stringify(ticket).replace(/"/g,'&quot;')})" title="Click para gestionar vínculo" style="cursor:pointer;font-size:10px;color:${color};background:rgba(255,255,255,.05);border:1px solid ${color}44;border-radius:4px;padding:2px 6px;margin-left:6px">🎫 ${ticket.key} · ${ticket.status}</span>`;
+  }
+
   function renderList() {
     const flows=getFiltered(), container=document.getElementById('fm-list-content');
     if(!allFlows.length)return;
